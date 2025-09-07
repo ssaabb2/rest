@@ -26,7 +26,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>لوحة تحكم المطعم - إدارة الطلبات (KDS)</title>
   <link rel="stylesheet" href="styles.css" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
     /* إضافات بسيطة للحالة "ملغي" وزر حذف أحمر */
@@ -577,12 +576,10 @@
 
       const html = `
         <form id="demoForm" class="form" style="display:grid;gap:10px">
-          <div style="display:grid;grid-template-columns:1fr 160px 200px;gap:8px">
+          <!-- ✅ تم تقليل الأعمدة إلى عمودين وإزالة خيار الإرسال -->
+          <div style="display:grid;grid-template-columns:1fr 160px;gap:8px">
             <input id="demoOrderName" class="input" placeholder="اسم الطلب (اختياري)" />
             <input id="demoTable" class="input" placeholder="رقم الطاولة (اختياري)" />
-            <label class="small" style="display:flex;align-items:center;gap:8px">
-              <input id="demoPersist" type="checkbox" /> إرسال الطلب إلى قاعدة البيانات
-            </label>
           </div>
           <input id="demoSearch" class="input" placeholder="ابحث عن صنف…" />
           <div id="demoItems" class="mini-list" style="max-height:50vh;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px">
@@ -599,7 +596,6 @@
         const listEl = document.getElementById('demoItems');
         const nameEl = document.getElementById('demoOrderName');
         const tableEl= document.getElementById('demoTable');
-        const persist= document.getElementById('demoPersist')?.checked;
 
         const selected = Array.from(listEl.querySelectorAll('.row')).map(r=>{
           const id  = r.dataset.id;
@@ -627,19 +623,19 @@
         // إضافة محلياً لواجهة KDS
         const orders = LS.get('orders', []); orders.unshift(order); LS.set('orders', orders);
 
-        // إشعار محلي
+        // إشعار محلي (تبقى كلمة "تجريبي" كما هي حالياً)
         const ns = LS.get('notifications', []);
         ns.unshift({ id: crypto.randomUUID(), type:'order', title:`طلب جديد #${fmt(order.id)}`, message:`إجمالي: ${fmt(total)} ر.س (تجريبي)`, time: nowISO(), read:false });
         LS.set('notifications', ns);
 
-        // (اختياري) إرسال فعلي إلى Supabase إن تم اختيار الخيار
-        if(persist && window.supabaseBridge?.createOrderSB){
+        // ✅ إرسال دائم إلى Supabase (بدون خيار)
+        if (window.supabaseBridge?.createOrderSB) {
           try{
             await window.supabaseBridge.createOrderSB({
               order_name: order.orderName,
               phone: '',
               table_no: order.table,
-              notes: '(طلب تجريبي من الأدمن)',
+              notes: '(طلب من الأدمن)',
               items: selected.map(x=>({ id:x.itemId, name:x.name, price:x.price, qty:x.qty }))
             });
           }catch(e){
