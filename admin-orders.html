@@ -562,18 +562,109 @@
     document.getElementById('closeGroup').addEventListener('click', ()=> modal.classList.remove('open'));
     modal.addEventListener('click', (e)=>{ if(e.target===modal) modal.classList.remove('open'); });
 
-    // Demo order
+    /* ===== طلب تجريبي من اختيارك ===== */
     document.getElementById('demoOrder').addEventListener('click', ()=>{
       const items = LS.get('menuItems', []);
       if(items.length===0){ Modal.info('أضف أصنافاً أولاً في المنيو.','تنبيه'); return; }
-      const pick = ()=> items[Math.floor(Math.random()*items.length)];
-      const list = [{base:pick()},{base:pick()}].map(x=>({itemId:x.base.id, qty: 1+Math.floor(Math.random()*3), price:x.base.price, name:x.base.name}));
-      const total = list.reduce((a,i)=>a+i.price*i.qty,0);
-      const order = { id: Math.floor(Math.random()*1e6), items: list, total, itemCount: list.reduce((a,b)=>a+b.qty,0), status:'new', time: nowISO(), table: (Math.random()>.5? (1+Math.floor(Math.random()*20)) : ''), orderName: ['Shawarma','Burger','Pizza','Salad','Pasta'][Math.floor(Math.random()*5)] };
-      const orders = LS.get('orders', []); orders.unshift(order); LS.set('orders', orders);
-      notify('طلب جديد #' + fmt(order.id), 'تمت إضافة طلب تجريبي');
-      try{ updateAll(); }catch(e){}
-      renderKDS();
+
+      const rows = items.map(it=>`
+        <div class="row" data-id="${it.id}" style="display:grid;grid-template-columns:1fr 100px 90px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed #eee">
+          <div class="small"><strong>${it.name}</strong><div class="small" style="color:var(--muted)">${(it.desc||'').slice(0,60)}</div></div>
+          <div class="small" style="color:var(--muted)">${Number(it.price||0).toLocaleString('en-US')} ر.س</div>
+          <input type="number" class="input qty" min="0" step="1" value="0" style="text-align:center" />
+        </div>
+      `).join('');
+
+      const html = `
+        <form id="demoForm" class="form" style="display:grid;gap:10px">
+          <div style="display:grid;grid-template-columns:1fr 160px 200px;gap:8px">
+            <input id="demoOrderName" class="input" placeholder="اسم الطلب (اختياري)" />
+            <input id="demoTable" class="input" placeholder="رقم الطاولة (اختياري)" />
+            <label class="small" style="display:flex;align-items:center;gap:8px">
+              <input id="demoPersist" type="checkbox" /> إرسال الطلب إلى قاعدة البيانات
+            </label>
+          </div>
+          <input id="demoSearch" class="input" placeholder="ابحث عن صنف…" />
+          <div id="demoItems" class="mini-list" style="max-height:50vh;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px">
+            ${rows || '<div class="small" style="color:var(--muted)">لا يوجد أصناف</div>'}
+          </div>
+          <div class="small" style="color:var(--muted)">اضبط الكمية لكل صنف (0 = غير مضاف)</div>
+        </form>
+      `;
+
+      const ok = document.createElement('button'); ok.className='btn btn-primary'; ok.textContent='إنشاء طلب تجريبي';
+      const cancel = document.createElement('button'); cancel.className='btn btn-ghost'; cancel.textContent='إلغاء'; cancel.onclick=()=>Modal.hide();
+
+      ok.onclick = async ()=>{
+        const listEl = document.getElementById('demoItems');
+        const nameEl = document.getElementById('demoOrderName');
+        const tableEl= document.getElementById('demoTable');
+        const persist= document.getElementById('demoPersist')?.checked;
+
+        const selected = Array.from(listEl.querySelectorAll('.row')).map(r=>{
+          const id  = r.dataset.id;
+          const qty = Number(r.querySelector('.qty').value||0);
+          if(qty>0){
+            const it = items.find(x=>x.id===id);
+            return { itemId:id, name: it?.name||'', price:Number(it?.price||0), qty };
+          }
+        }).filter(Boolean);
+
+        if(selected.length===0){ Modal.info('اختر صنفاً واحداً على الأقل.','تنبيه'); return; }
+
+        const total = selected.reduce((s,i)=> s + i.price * i.qty, 0);
+        const order = {
+          id: Math.floor(Math.random()*1e6),
+          items: selected,
+          total,
+          itemCount: selected.reduce((a,b)=> a + (b.qty||0), 0),
+          status: 'new',
+          time: nowISO(),
+          table: (tableEl?.value||'').trim(),
+          orderName: (nameEl?.value||'طلب تجريبي').trim()
+        };
+
+        // إضافة محلياً لواجهة KDS
+        const orders = LS.get('orders', []); orders.unshift(order); LS.set('orders', orders);
+
+        // إشعار محلي
+        const ns = LS.get('notifications', []);
+        ns.unshift({ id: crypto.randomUUID(), type:'order', title:`طلب جديد #${fmt(order.id)}`, message:`إجمالي: ${fmt(total)} ر.س (تجريبي)`, time: nowISO(), read:false });
+        LS.set('notifications', ns);
+
+        // (اختياري) إرسال فعلي إلى Supabase إن تم اختيار الخيار
+        if(persist && window.supabaseBridge?.createOrderSB){
+          try{
+            await window.supabaseBridge.createOrderSB({
+              order_name: order.orderName,
+              phone: '',
+              table_no: order.table,
+              notes: '(طلب تجريبي من الأدمن)',
+              items: selected.map(x=>({ id:x.itemId, name:x.name, price:x.price, qty:x.qty }))
+            });
+          }catch(e){
+            console.error(e);
+            Modal.info('تعذّر الإرسال إلى القاعدة. تم إنشاء الطلب محلياً فقط.','تنبيه');
+          }
+        }
+
+        try{ updateAll(); }catch(e){}
+        renderKDS();
+        Modal.hide();
+      };
+
+      Modal.show('إنشاء طلب تجريبي من أصنافك', html, [ok, cancel]);
+
+      // بحث فوري داخل قائمة الأصناف
+      const q = document.getElementById('demoSearch');
+      q.addEventListener('input', ()=>{
+        const v = q.value.trim().toLowerCase();
+        document.querySelectorAll('#demoItems .row').forEach(r=>{
+          const it = items.find(x=>x.id===r.dataset.id);
+          const hay = `${it?.name||''} ${(it?.desc||'')}`.toLowerCase();
+          r.style.display = hay.includes(v) ? 'grid' : 'none';
+        });
+      });
     });
 
     // ======== سلة Sync ========
