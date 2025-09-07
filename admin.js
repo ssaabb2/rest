@@ -281,7 +281,7 @@ async function deleteOrderInline(orderId) {
   updateAll();
 }
 function updateOrderCounters() {
-  const orders = LS.get('orders', []);
+const orders = LS.get('orders', []).filter(o => o.source !== 'demo');
   const counts = {
     all: orders.length,
     new: orders.filter((o) => o.status === 'new').length,
