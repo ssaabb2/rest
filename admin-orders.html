@@ -33,6 +33,12 @@
     .kds-canceled{ opacity:.9; box-shadow:0 0 0 2px rgba(239,68,68,.22) inset }
     .btn-danger{ background:#ef4444; color:#fff }
     .btn-danger.btn-ghost{ background:transparent; color:#ef4444; border:1px solid rgba(239,68,68,.35) }
+
+    /* قفل الأزرار أثناء التنفيذ */
+    button[aria-busy="true"], .is-busy{
+      pointer-events: none !important;
+      opacity: .6 !important;
+    }
   </style>
 
  <script type="module">
@@ -561,10 +567,18 @@
     document.getElementById('closeGroup').addEventListener('click', ()=> modal.classList.remove('open'));
     modal.addEventListener('click', (e)=>{ if(e.target===modal) modal.classList.remove('open'); });
 
+    /* ===== قفل إنشاء الطلب التجريبي لمنع النقرات المتعددة ===== */
+    let DEMO_CREATING = false;
+
     /* ===== طلب تجريبي من اختيارك ===== */
     document.getElementById('demoOrder').addEventListener('click', ()=>{
+      const demoBtn = document.getElementById('demoOrder');
       const items = LS.get('menuItems', []);
       if(items.length===0){ Modal.info('أضف أصنافاً أولاً في المنيو.','تنبيه'); return; }
+
+      // قفل زر فتح المودال حتى لا يُفتح مودالان
+      demoBtn.disabled = true;
+      demoBtn.setAttribute('aria-busy','true');
 
       const rows = items.map(it=>`
         <div class="row" data-id="${it.id}" style="display:grid;grid-template-columns:1fr 100px 90px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed #eee">
@@ -590,9 +604,18 @@
       `;
 
       const ok = document.createElement('button'); ok.className='btn btn-primary'; ok.textContent='إنشاء طلب تجريبي';
-      const cancel = document.createElement('button'); cancel.className='btn btn-ghost'; cancel.textContent='إلغاء'; cancel.onclick=()=>Modal.hide();
+      const cancel = document.createElement('button'); cancel.className='btn btn-ghost'; cancel.textContent='إلغاء'; 
+      const releaseDemoBtn = ()=>{ demoBtn.disabled=false; demoBtn.removeAttribute('aria-busy'); };
+
+      cancel.onclick=()=>{ releaseDemoBtn(); Modal.hide(); };
+
+      // أيضًا زر إغلاق المودال العام
+      const appClose = document.getElementById('appModalClose');
+      const onAppClose = ()=> releaseDemoBtn();
+      appClose?.addEventListener('click', onAppClose, { once:true });
 
       ok.onclick = async ()=>{
+        // لا نُفعّل القفل قبل التأكد من وجود عناصر مُختارة
         const listEl = document.getElementById('demoItems');
         const nameEl = document.getElementById('demoOrderName');
         const tableEl= document.getElementById('demoTable');
@@ -608,45 +631,62 @@
 
         if(selected.length===0){ Modal.info('اختر صنفاً واحداً على الأقل.','تنبيه'); return; }
 
-        const total = selected.reduce((s,i)=> s + i.price * i.qty, 0);
-        const order = {
-          id: Math.floor(Math.random()*1e6),
-          items: selected,
-          total,
-          itemCount: selected.reduce((a,b)=> a + (b.qty||0), 0),
-          status: 'new',
-          time: nowISO(),
-          table: (tableEl?.value||'').trim(),
-          orderName: (nameEl?.value||'طلب تجريبي').trim()
-        };
+        // قفل النقرات المتعددة
+        if (DEMO_CREATING) return;
+        DEMO_CREATING = true;
+        ok.disabled = true; ok.setAttribute('aria-busy','true');
+        demoBtn.disabled = true; demoBtn.setAttribute('aria-busy','true');
 
-        // إضافة محلياً لواجهة KDS
-        const orders = LS.get('orders', []); orders.unshift(order); LS.set('orders', orders);
+        try{
+          const total = selected.reduce((s,i)=> s + i.price * i.qty, 0);
+          const order = {
+            id: Math.floor(Math.random()*1e6),
+            items: selected,
+            total,
+            itemCount: selected.reduce((a,b)=> a + (b.qty||0), 0),
+            status: 'new',
+            time: nowISO(),
+            table: (tableEl?.value||'').trim(),
+            orderName: (nameEl?.value||'طلب تجريبي').trim()
+          };
 
-        // إشعار محلي (تبقى كلمة "تجريبي" كما هي حالياً)
-        const ns = LS.get('notifications', []);
-        ns.unshift({ id: crypto.randomUUID(), type:'order', title:`طلب جديد #${fmt(order.id)}`, message:`إجمالي: ${fmt(total)} ر.س (تجريبي)`, time: nowISO(), read:false });
-        LS.set('notifications', ns);
+          // إضافة محلياً لواجهة KDS
+          const orders = LS.get('orders', []); orders.unshift(order); LS.set('orders', orders);
 
-        // ✅ إرسال دائم إلى Supabase (بدون خيار)
-        if (window.supabaseBridge?.createOrderSB) {
-          try{
-            await window.supabaseBridge.createOrderSB({
-              order_name: order.orderName,
-              phone: '',
-              table_no: order.table,
-              notes: '(طلب من الأدمن)',
-              items: selected.map(x=>({ id:x.itemId, name:x.name, price:x.price, qty:x.qty }))
-            });
-          }catch(e){
-            console.error(e);
-            Modal.info('تعذّر الإرسال إلى القاعدة. تم إنشاء الطلب محلياً فقط.','تنبيه');
+          // إشعار محلي
+          const ns = LS.get('notifications', []);
+          ns.unshift({ id: crypto.randomUUID(), type:'order', title:`طلب جديد #${fmt(order.id)}`, message:`إجمالي: ${fmt(total)} ر.س (تجريبي)`, time: nowISO(), read:false });
+          LS.set('notifications', ns);
+
+          // إرسال دائم إلى Supabase (مرّة واحدة فقط بفضل القفل)
+          if (window.supabaseBridge?.createOrderSB) {
+            try{
+              await window.supabaseBridge.createOrderSB({
+                order_name: order.orderName,
+                phone: '',
+                table_no: order.table,
+                notes: '(طلب من الأدمن)',
+                items: selected.map(x=>({ id:x.itemId, name:x.name, price:x.price, qty:x.qty }))
+              });
+            }catch(e){
+              console.error(e);
+              Modal.info('تعذّر الإرسال إلى القاعدة. تم إنشاء الطلب محلياً فقط.','تنبيه');
+            }
           }
-        }
 
-        try{ updateAll(); }catch(e){}
-        renderKDS();
-        Modal.hide();
+          try{ updateAll(); }catch(e){}
+          renderKDS();
+          Modal.hide();
+          releaseDemoBtn();
+        }catch(err){
+          console.error(err);
+          Modal.info('تعذّر إنشاء الطلب، حاول لاحقاً.','خطأ');
+        }finally{
+          // فك القفل دائماً
+          DEMO_CREATING = false;
+          ok.disabled = false; ok.removeAttribute('aria-busy');
+          demoBtn.disabled = false; demoBtn.removeAttribute('aria-busy');
+        }
       };
 
       Modal.show('إنشاء طلب تجريبي من أصنافك', html, [ok, cancel]);
