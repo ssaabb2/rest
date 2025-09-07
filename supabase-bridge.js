@@ -65,17 +65,28 @@ export async function createOrderSB({order_name, phone, table_no, notes, items})
     if (i2.error) throw i2.error;
   }
 
-  // cache to LS for UI
+  // cache to LS for UI  (إكمال النموذج ليستجيب الـKDS/لوحة الأدمن)
   const old = LS.get('orders', []);
-  const itemCount = (items||[]).reduce((s,it)=> s + Number(it.qty||1), 0);
+  const itemsLS = (items||[]).map(it => ({
+    id: it.id || null,
+    name: it.name || '',
+    price: Number(it.price)||0,
+    qty: Number(it.qty)||1
+  }));
+  const itemCount = itemsLS.reduce((s,it)=> s + (Number(it.qty)||1), 0);
+
+  const nowISO = new Date().toISOString();
   old.unshift({
     id: order.id,
     total,
     itemCount,
-    createdAt: new Date().toISOString(),
-    table: table_no,
-    orderName: order_name,
-    notes
+    time: nowISO,           // مهم للفلاتر والمؤقّت
+    createdAt: nowISO,      // مستخدم بالإشعارات
+    status: 'new',          // يبدأ كجديد
+    items: itemsLS,         // عرض تفاصيل العناصر على البطاقة
+    table: table_no || '',
+    orderName: order_name || '',
+    notes: notes || ''
   });
   LS.set('orders', old);
   return order;
@@ -94,10 +105,10 @@ export async function createReservationSB({name, phone, iso, people, kind='table
 
   // نبني سجل محلي لواجهة المستخدم (بدون الاعتماد على إرجاع السيرفر)
   const r = {
-    id: (crypto?.randomUUID?.() || `tmp-${Date.now()}`), // معرف محلي للاستخدام في الواجهة فقط
+    id: (crypto?.randomUUID?.() || `tmp-${Date.now()}`),
     name,
     phone,
-    date: iso,                 // تاريخ الإرسال (سيتزامن الحقيقي من صفحة الأدمن)
+    date: iso,
     people,
     kind,
     table_no: table || '',
@@ -111,13 +122,13 @@ export async function createReservationSB({name, phone, iso, people, kind='table
     id: r.id,
     name: r.name,
     phone: r.phone,
-    date: r.date,                 // استخدم تاريخ الإرسال محليًا
+    date: r.date,
     people: r.people,
     kind: r.kind,
     table: r.table_no || '',
     duration: r.duration_minutes || 90,
     notes: r.notes || '',
-    status: r.status || 'new',    // مهم
+    status: r.status || 'new',
     createdAt: new Date().toISOString()
   });
 
@@ -326,7 +337,9 @@ export async function syncAdminDataToLocal(){
 
   // adapt to your LS shapes
   LS.set('categories', cats.data || []);
-  LS.set('menuItems', (items.data||[]).map(it => ({
+  LS.set('menuItems', (items.data||[]).map(it => ([
+    it.id, it.name, it["desc"], it.price, it.img, it.cat_id, it.fresh, it.rating_avg, it.rating_count, it.available
+  ] && {
     id: it.id, name: it.name, desc: it["desc"], price: Number(it.price)||0,
     img: it.img, catId: it.cat_id, fresh: !!it.fresh,
     rating: { avg: Number(it.rating_avg)||0, count: Number(it.rating_count)||0 },
@@ -340,15 +353,22 @@ export async function syncAdminDataToLocal(){
     }));
     const cnt = its.reduce((s,it)=> s + (Number(it.qty)||1), 0);
     return {
-      id: o.id, total: Number(o.total)||0, itemCount: cnt,
-      createdAt: o.created_at, table: o.table_no||'', orderName: o.order_name||'', notes: o.notes||'',
+      id: o.id,
+      total: Number(o.total)||0,
+      itemCount: cnt,
+      time: o.created_at,          // NEW
+      createdAt: o.created_at,
+      status: 'new',               // NEW
+      table: o.table_no||'',
+      orderName: o.order_name||'',
+      notes: o.notes||'',
       items: its
     };
   });
   LS.set('orders', adminOrders);
 
   LS.set('reservations', (reservations.data||[]).map(r => ({
-    id: Number(r.id), // توحيد النوع محليًا
+    id: Number(r.id),
     name: r.name,
     phone: r.phone,
     date: r.date,
@@ -357,7 +377,7 @@ export async function syncAdminDataToLocal(){
     table: r.table_no || '',
     duration: r.duration_minutes || 90,
     notes: r.notes || '',
-    status: r.status || 'new'     // مهم للفلاتر والعدادات
+    status: r.status || 'new'
   })));
 
   // notifications: only orders for the admin drawer
