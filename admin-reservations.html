@@ -1,4 +1,4 @@
-<!-- admin-reservations.html (نسخة كاملة مُحدّثة) -->
+<!-- admin-reservations.html (نسخة كاملة مُحدّثة مع قفل الأزرار أثناء التنفيذ) -->
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -135,6 +135,12 @@
     .ops-inline{
       display:flex; align-items:center; gap:8px;
       flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;
+    }
+
+    /* --- قفل الأزرار أثناء التنفيذ --- */
+    button[aria-busy="true"], .is-busy {
+      pointer-events: none !important;
+      opacity: .6 !important;
     }
   </style>
 </head>
@@ -459,6 +465,29 @@
         return false;
       }
 
+      /* --- هيلبر قفل الأزرار أثناء التنفيذ --- */
+      async function busy(el, task){
+        if (el && el.dataset.busy === '1') return;   // حماية إضافية
+        if (el){
+          el.dataset.busy = '1';
+          el.disabled = true;
+          el.classList.add('is-busy');
+          el.setAttribute('aria-busy','true');
+        }
+        try{
+          return await task();
+        } finally {
+          if (el){
+            el.disabled = false;
+            el.classList.remove('is-busy');
+            el.removeAttribute('aria-busy');
+            delete el.dataset.busy;
+          }
+        }
+      }
+      // إتاحته عالميًا ليستفيد منه سكربت المودال في الأسفل
+      window.busy = busy;
+
       /* ====== Render + Pagination ====== */
       function render(){
         updateKPIs();
@@ -528,14 +557,14 @@
               <td class="nowrap">${dt.t}</td>
               <td>${fmtNum(r.people||1)}</td>
               <td>${formatTables(r.table||'') || '—'}</td>
-              <td><button class="status-pill ${statusClass(r.status)}" title="تغيير الحالة" onclick='__res.quickStatus(${safeId})'>${statusLabel(r.status)}</button></td>
+              <td><button class="status-pill ${statusClass(r.status)}" title="تغيير الحالة" onclick='__res.quickStatus(${safeId}, this)'>${statusLabel(r.status)}</button></td>
               <td>${notes}</td>
               <td class="col-ops">
                 <div class="ops-inline">
-                  <button class="btn-badge btn-badge--danger" onclick='__res.remove(${safeId})'>حذف</button>
-                  <button class="btn-badge btn-badge--ghost" onclick='__res.print(${safeId})'>طباعة</button>
-                  <button class="btn-badge btn-badge--ghost" onclick='__res.assignTable(${safeId})'>تعيين طاولة</button>
-                  <button class="btn-badge btn-badge--ghost" onclick='__res.edit(${safeId})'>تعديل</button>
+                  <button class="btn-badge btn-badge--danger" onclick='__res.remove(${safeId}, this)'>حذف</button>
+                  <button class="btn-badge btn-badge--ghost" onclick='__res.print(${safeId}, this)'>طباعة</button>
+                  <button class="btn-badge btn-badge--ghost" onclick='__res.assignTable(${safeId}, this)'>تعيين طاولة</button>
+                  <button class="btn-badge btn-badge--ghost" onclick='__res.edit(${safeId}, this)'>تعديل</button>
                 </div>
               </td>
             </tr>`;
@@ -568,12 +597,6 @@
         }catch(e){
           Modal?.info?.('تعذّر تحديث الحالة','خطأ');
         }
-      }
-
-      function toLocalInputValue(date){
-        if(!(date instanceof Date) || isNaN(date)) return '';
-        const off = date.getTimezoneOffset(); const local = new Date(date.getTime() - off*60000);
-        return local.toISOString().slice(0,16);
       }
 
       function openForm(title, r, onSubmit){
@@ -643,13 +666,13 @@
 
       // واجهة عامة
       window.__res = {
-        quickStatus(id){
+        async quickStatus(id, el){
           const list = listAll(); const r = list.find(x=>x.id===id); if(!r) return;
           const flow=['new','confirmed','seated','done']; const i=flow.indexOf(r.status);
           const next = (i>=0 && i<flow.length-1) ? flow[i+1] : 'done';
-          changeStatus(id, next);
+          await busy(el, async ()=>{ await changeStatus(id, next); });
         },
-        edit(id){
+        edit(id/*, el*/){
           const list=listAll(); const r=list.find(x=>x.id===id); if(!r) return;
           openForm('تعديل الحجز', r, async (data)=>{
             try{
@@ -662,7 +685,7 @@
             }catch(e){ Modal?.info?.('تعذّر الحفظ','خطأ'); }
           });
         },
-        assignTable(id){
+        assignTable(id/*, el*/){
           const list=listAll(); const r=list.find(x=>x.id===id); if(!r) return;
           const body = `<label class="app-label">رقم الطاولة/الطاولات</label>
                         <input class="app-input" id="tableInp" placeholder="مثال: 8,9 أو 3-5" value="${r.table?formatTables(r.table):''}" autofocus />
@@ -698,7 +721,7 @@
               }}]
           });
         },
-        print(id){
+        print(id/*, el*/){
           const r=listAll().find(x=>x.id===id); if(!r) return;
           const dt=splitDateTime(r.date);
           function pickName(){
@@ -764,7 +787,7 @@
           </body></html>`);
           w.document.close();
         },
-        async remove(id){
+        async remove(id, el){
           const ok = await new Promise(resolve=>{
             showModal({ title:'تأكيد الحذف', bodyHTML:'هل تريد حذف هذا الحجز؟',
               actions:[{label:'إلغاء', className:'btn btn-ghost', onClick:()=>{hideModal();resolve(false)}},
@@ -772,11 +795,13 @@
             });
           });
           if(!ok) return;
-          try{
-            await window.supabaseBridge.deleteReservationSB(id);
-            await window.supabaseBridge.syncAdminDataToLocal();
-            render();
-          }catch(e){ Modal?.info?.('تعذّر الحذف','خطأ'); }
+          await busy(el, async ()=>{
+            try{
+              await window.supabaseBridge.deleteReservationSB(id);
+              await window.supabaseBridge.syncAdminDataToLocal();
+              render();
+            }catch(e){ Modal?.info?.('تعذّر الحذف','خطأ'); }
+          });
         }
       };
 
@@ -849,9 +874,8 @@
           addBtn.classList.add('btn-ghost');
         }
         try{
-        const key = String(window.SUPABASE_ANON||'');
-if(!key || key.startsWith('sb_publishable_') || key.includes('REPLACE_WITH_YOUR_REAL_ANON_JWT')) {
-
+          const key = String(window.SUPABASE_ANON||'');
+          if(!key || key.startsWith('sb_publishable_') || key.includes('REPLACE_WITH_YOUR_REAL_ANON_JWT')) {
             return;
           }
         }catch(_){}
@@ -897,7 +921,14 @@ if(!key || key.startsWith('sb_publishable_') || key.includes('REPLACE_WITH_YOUR_
           const b = document.createElement('button');
           b.className = a.className || 'btn';
           b.textContent = a.label || 'موافق';
-          b.addEventListener('click', () => { try{ a.onClick?.(); }catch{} });
+          // قفل زر المودال أثناء التنفيذ
+          b.addEventListener('click', async () => {
+            if (window.busy) {
+              await window.busy(b, async ()=> { await a.onClick?.(b); });
+            } else {
+              try{ await a.onClick?.(b); }catch{}
+            }
+          });
           actionsEl.appendChild(b);
         });
         ov.style.display = 'grid';
