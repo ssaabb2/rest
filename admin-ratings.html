@@ -135,8 +135,13 @@
           </div>
           <div class="filters">
             <button id="seedDemo" class="btn btn-ghost btn-sm btn-pill">عينات +</button>
-            <!-- زر جديد لعينات كلها خمس نجوم -->
+            <!-- زر عينات 5 نجوم -->
             <button id="seed5" class="btn btn-primary btn-sm btn-pill" title="إضافة عينات 5 نجوم">عينات 5★</button>
+            <!-- الأزرار الجديدة لعينات 4/3/2/1 نجوم -->
+            <button id="seed4" class="btn btn-ghost btn-sm btn-pill" title="إضافة عينات 4 نجوم">عينات 4★</button>
+            <button id="seed3" class="btn btn-ghost btn-sm btn-pill" title="إضافة عينات 3 نجوم">عينات 3★</button>
+            <button id="seed2" class="btn btn-ghost btn-sm btn-pill" title="إضافة عينات 2 نجوم">عينات 2★</button>
+            <button id="seed1" class="btn btn-ghost btn-sm btn-pill" title="إضافة عينات 1 نجمة">عينات 1★</button>
             <button id="exportCsv" class="btn btn-ghost btn-sm btn-pill">تصدير CSV</button>
             <button id="clearAll" class="btn btn-ghost btn-sm btn-pill">حذف الكل</button>
           </div>
@@ -239,7 +244,10 @@
       const all = (LS.get('ratings',[])||[]).filter(r=> r.itemId===itemId);
       const count = all.length;
       const avg = count ? +(all.reduce((a,r)=> a + (Number(r.stars)||0), 0) / count).toFixed(2) : 0;
+      // تحديث صيغتين للانسجام مع باقي الصفحات
       it.rating = { avg, count };
+      it.rating_avg = avg;
+      it.rating_count = count;
       LS.set('menuItems', items);
     }
 
@@ -407,21 +415,30 @@
       render();
     }
 
-    // عينات 5★ (كلها خمس نجوم)
-    function seedFive(){
+    // مولّد عينات بدرجة ثابتة (1..5)
+    function seedFixed(stars){
       const items = LS.get('menuItems',[])||[];
       if(items.length===0){ window.Modal.info('لا يوجد أصناف لإضافة تقييمات لها.'); return; }
       const rs = LS.get('ratings',[])||[];
       const now = Date.now();
       const pick = items.slice(0, Math.min(6, items.length));
       pick.forEach((it,idx)=>{
-        rs.unshift({ id: crypto.randomUUID(), itemId: it.id, stars: 5, time: new Date(now - idx*3600e3).toISOString(), name: it.name });
+        rs.unshift({ id: crypto.randomUUID(), itemId: it.id, stars, time: new Date(now - idx*3600e3).toISOString(), name: it.name });
       });
       LS.set('ratings', rs);
       pick.forEach(it=> recalcItem(it.id));
       try{ updateAll(); }catch(e){}
       render();
     }
+
+    // عينات 5★ (كلها خمس نجوم)
+    function seedFive(){ seedFixed(5); }
+
+    // مختصرات 4/3/2/1 نجوم
+    const seedFour  = ()=> seedFixed(4);
+    const seedThree = ()=> seedFixed(3);
+    const seedTwo   = ()=> seedFixed(2);
+    const seedOne   = ()=> seedFixed(1);
 
     // أحداث الواجهة
     document.getElementById('q').addEventListener('input', (e)=>{ R.q = e.target.value; R.page = 1; render(); });
@@ -439,13 +456,21 @@
     sizeSel.addEventListener('change', ()=>{ R.size = Number(sizeSel.value)||10; localStorage.setItem('rat_page_size', R.size); R.page=1; render(); });
     document.getElementById('exportCsv').onclick = exportCsv;
     document.getElementById('seedDemo').onclick = seedDemo;
-    document.getElementById('seed5').onclick = seedFive; // ← ربط زر عينات 5★
+    document.getElementById('seed5').onclick = seedFive;
+    document.getElementById('seed4').onclick = seedFour;
+    document.getElementById('seed3').onclick = seedThree;
+    document.getElementById('seed2').onclick = seedTwo;
+    document.getElementById('seed1').onclick = seedOne;
     document.getElementById('clearAll').onclick = async ()=>{
       const ok = await window.Modal.confirm('سيتم حذف كل التقييمات وإعادة حساب المتوسطات. هل أنت متأكد؟','تحذير');
       if(!ok) return;
       LS.set('ratings', []);
       const items = LS.get('menuItems',[])||[];
-      items.forEach(it=> it.rating = {avg:0,count:0});
+      items.forEach(it=> {
+        it.rating = {avg:0,count:0};
+        it.rating_avg = 0;
+        it.rating_count = 0;
+      });
       LS.set('menuItems', items);
       try{ updateAll(); }catch(e){}
       render();
