@@ -26,13 +26,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>لوحة تحكم المطعم – إدارة التقييمات</title>
   <link rel="stylesheet" href="styles.css" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
 
- <script type="module">
-  import { requireAdminOrRedirect, syncAdminDataToLocal } from "./supabase-bridge.js";
-  await requireAdminOrRedirect('login.html');    // يتحقق من الجلسة وعضويتك في admins
-  await syncAdminDataToLocal();                  // يملأ localStorage من Supabase لتكمل سكربتاتك
-</script>
+  <!-- حماية ومسح بيانات الإدارة -->
+  <script type="module">
+    import { requireAdminOrRedirect, syncAdminDataToLocal } from "./supabase-bridge.js";
+    await requireAdminOrRedirect('login.html');    // يتحقق من الجلسة وعضويتك في admins
+    await syncAdminDataToLocal();                  // يملأ localStorage من Supabase لتكمل سكربتاتك
+  </script>
 
   <style>
     /* هذه الصفحة فقط */
@@ -135,6 +135,8 @@
           </div>
           <div class="filters">
             <button id="seedDemo" class="btn btn-ghost btn-sm btn-pill">عينات +</button>
+            <!-- زر جديد لعينات كلها خمس نجوم -->
+            <button id="seed5" class="btn btn-primary btn-sm btn-pill" title="إضافة عينات 5 نجوم">عينات 5★</button>
             <button id="exportCsv" class="btn btn-ghost btn-sm btn-pill">تصدير CSV</button>
             <button id="clearAll" class="btn btn-ghost btn-sm btn-pill">حذف الكل</button>
           </div>
@@ -224,7 +226,7 @@
     function itemsById(){ const map={}; (LS.get('menuItems',[])||[]).forEach(i=> map[i.id]=i); return map; }
 
     function starHtml(s){
-      const n = Math.max(0, Math.min(5, Number(s)||0));
+      const n = Math.max(1, Math.min(5, Number(s)||1));
       let h = '<span class="stars-sm">';
       for(let i=1;i<=5;i++) h += `<span class="s ${i<=n?'':'off'}"></span>`;
       return h + '</span>';
@@ -318,7 +320,7 @@
         try{ updateAll(); }catch(e){}
         render();
       },
-      // === تم التعديل: اختيار الصنف + تعديل النجوم ===
+      // — تعديل التقييم وربطه بصنف —
       edit(id){
         const list = listAll();
         const r = list.find(x=>x.id===id); if(!r) return;
@@ -388,7 +390,7 @@
       URL.revokeObjectURL(a.href);
     }
 
-    // عينات تجريبية
+    // عينات تجريبية (عشوائي 1–5)
     function seedDemo(){
       const items = LS.get('menuItems',[])||[];
       if(items.length===0){ window.Modal.info('لا يوجد أصناف لإضافة تقييمات لها.'); return; }
@@ -396,8 +398,24 @@
       const now = Date.now();
       const pick = items.slice(0, Math.min(6, items.length));
       pick.forEach((it,idx)=>{
-        const stars = (idx%5)+1;
+        const stars = (idx%5)+1; // عشوائي متدرّج
         rs.unshift({ id: crypto.randomUUID(), itemId: it.id, stars, time: new Date(now - idx*3600e3).toISOString(), name: it.name });
+      });
+      LS.set('ratings', rs);
+      pick.forEach(it=> recalcItem(it.id));
+      try{ updateAll(); }catch(e){}
+      render();
+    }
+
+    // عينات 5★ (كلها خمس نجوم)
+    function seedFive(){
+      const items = LS.get('menuItems',[])||[];
+      if(items.length===0){ window.Modal.info('لا يوجد أصناف لإضافة تقييمات لها.'); return; }
+      const rs = LS.get('ratings',[])||[];
+      const now = Date.now();
+      const pick = items.slice(0, Math.min(6, items.length));
+      pick.forEach((it,idx)=>{
+        rs.unshift({ id: crypto.randomUUID(), itemId: it.id, stars: 5, time: new Date(now - idx*3600e3).toISOString(), name: it.name });
       });
       LS.set('ratings', rs);
       pick.forEach(it=> recalcItem(it.id));
@@ -421,6 +439,7 @@
     sizeSel.addEventListener('change', ()=>{ R.size = Number(sizeSel.value)||10; localStorage.setItem('rat_page_size', R.size); R.page=1; render(); });
     document.getElementById('exportCsv').onclick = exportCsv;
     document.getElementById('seedDemo').onclick = seedDemo;
+    document.getElementById('seed5').onclick = seedFive; // ← ربط زر عينات 5★
     document.getElementById('clearAll').onclick = async ()=>{
       const ok = await window.Modal.confirm('سيتم حذف كل التقييمات وإعادة حساب المتوسطات. هل أنت متأكد؟','تحذير');
       if(!ok) return;
