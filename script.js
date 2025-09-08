@@ -465,7 +465,8 @@ function renderCats(){
       const isActive = state.activeCat===c.id;
       btn.className = 'pill' + (isActive ? ' active' : '');
       btn.dataset.id = c.id; // مهم للسلايدر والتتبّع
-      btn.innerHTML = `<span class="ico">${catIcons[c.id]||'•'}</span><span>${c.name}</span>`;
+const ico = catIcons[c.id] ? `<span class="ico">${catIcons[c.id]}</span>` : '';
+btn.innerHTML = `${ico}<span>${c.name}</span>`;
       btn.onclick = ()=>{
         if (c.id === 'sections'){
           state.activeCat = 'sections';
