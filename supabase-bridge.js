@@ -38,6 +38,8 @@ export async function syncPublicCatalogToLocal(){
 
   LS.set('categories', cats.data || []);
   LS.set('menuItems', adapted);
+  try { document.dispatchEvent(new CustomEvent('sb:public-synced', { detail:{ at: Date.now() } })); } catch {}
+
   return { categories: cats.data, items: adapted };
 }
 
