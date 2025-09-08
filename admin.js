@@ -42,6 +42,85 @@ const setHTML = (sel, html) => {
   if (el) el.innerHTML = html ?? '';
 };
 
+/* =====================================================
+   NEW: إعدادات رفع الصور + ضغط تلقائي
+===================================================== */
+const BUCKET = 'menu-images';      // اسم الـ bucket في Storage
+const MAX_BEFORE_COMPRESS = 1_500_000; // 1.5MB
+
+// ضغط الصورة إن كانت كبيرة (يُنتج JPEG حتى 1280px)
+async function compressImage(file, maxW = 1280, maxH = 1280, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((b) => {
+        if (!b) return reject(new Error('فشل ضغط الصورة'));
+        const out = new File([b], (file.name.replace(/\.[^.]+$/, '') || 'image') + '.jpg', { type: 'image/jpeg' });
+        resolve(out);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = () => reject(new Error('تعذّر قراءة الصورة'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/* =====================================================
+   NEW: رفع صورة إلى Supabase Storage وإرجاع الرابط العام
+   - ضع اسم الباكِت: menu-images (عام Public + سياسات insert مفعلة)
+===================================================== */
+async function uploadImageToStorage(file){
+  const sb = window.supabase;
+  if (!sb || !file) throw new Error('Supabase client أو الملف غير موجود');
+
+  let upFile = file;
+
+  // جرّب ضغطًا خفيفًا إن كان الملف كبيرًا لتفادي 413
+  if (upFile.size > MAX_BEFORE_COMPRESS) {
+    try { upFile = await compressImage(upFile); } catch {}
+  }
+
+  // امتداد آمن
+  const ext = (upFile.name?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+  const path = `menu/${crypto.randomUUID()}.${ext}`;
+
+  const { data, error } = await sb.storage.from(BUCKET).upload(path, upFile, {
+    cacheControl: '3600',
+    upsert: false,
+    contentType: upFile.type || 'image/jpeg'
+  });
+
+  if (error) {
+    // رسائل مفهومة
+    const msg = (error.message || '').toLowerCase();
+    if (msg.includes('row level security') || msg.includes('rls')) {
+      throw new Error('الرفع مرفوض بسبب RLS: أضف سياسات insert لباكِت Storage.');
+    }
+    if (msg.includes('payload too large') || msg.includes('413')) {
+      // محاولة ضغط أكثر ثم إعادة الرفع مرة ثانية
+      try {
+        const smaller = await compressImage(upFile, 1024, 1024, 0.8);
+        const retry = await sb.storage.from(BUCKET).upload(`menu/${crypto.randomUUID()}.jpg`, smaller, {
+          cacheControl: '3600', upsert: false, contentType: 'image/jpeg'
+        });
+        if (retry.error) throw retry.error;
+        const pub2 = sb.storage.from(BUCKET).getPublicUrl(retry.data.path);
+        return pub2.data.publicUrl;
+      } catch (e2) {
+        throw new Error('الملف كبير جدًا. جرّب صورة أصغر (≤ 2MB).');
+      }
+    }
+    throw new Error(error.message || 'تعذّر رفع الصورة');
+  }
+
+  const pub = sb.storage.from(BUCKET).getPublicUrl(data.path);
+  return pub.data.publicUrl;
+}
 
 /* =====================================================
    Modal system (بديل احترافي عن السناك بار/التوست)
@@ -100,7 +179,7 @@ function ensureModalHost(){
   document.body.appendChild(overlay);
   overlay.addEventListener('click', (e)=>{ if(e.target === overlay) hideModal(); });
   on('#modalCloseBtn','click', hideModal);
-  document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') hideModal(); });
+  document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') hideModal(); });
   return overlay;
 }
 function showModal({title, bodyHTML, actions=[]}){
@@ -149,7 +228,7 @@ const notifDrawer = q('#notifDrawer');
 const closeNotif = q('#closeNotif');
 
 if (notifBtn && notifDrawer) {
-notifBtn.addEventListener('click', () => { try{ renderNotifs(); }catch(e){}; notifDrawer.classList.add('open'); });
+  notifBtn.addEventListener('click', () => { try{ renderNotifs(); }catch(e){}; notifDrawer.classList.add('open'); });
 }
 if (closeNotif && notifDrawer) {
   closeNotif.addEventListener('click', () => notifDrawer.classList.remove('open'));
@@ -168,9 +247,8 @@ on('#markAllRead', 'click', () => {
 /* NEW: استمع لتغييرات الحجوزات أيضًا */
 window.addEventListener('storage', (e) => {
   if (!e || !e.key || ['notifications','orders','menuItems','ratings','categories','reservations'].includes(e.key)) {
-  updateAll();
-}
-
+    updateAll();
+  }
 });
 
 /* =====================================================
@@ -290,7 +368,7 @@ async function deleteOrderInline(orderId) {
 
 }
 function updateOrderCounters() {
-const orders = LS.get('orders', []).filter(o => o.source !== 'demo');
+  const orders = LS.get('orders', []).filter(o => o.source !== 'demo');
   const counts = {
     all: orders.length,
     new: orders.filter((o) => o.status === 'new').length,
@@ -690,7 +768,7 @@ function editItem(id){
     }
   }
 
-  function submit(){
+  async function submit(){
     const name = q('#ei_name').value.trim();
     const price = Number(q('#ei_price').value);
     const desc = q('#ei_desc').value.trim();
@@ -736,13 +814,17 @@ function editItem(id){
       }
     }
 
+    // NEW: ارفع إلى Storage بدلاً من Base64
     if (file){
-      const reader = new FileReader();
-      reader.onload = ()=> finalize(reader.result);
-      reader.onerror = ()=> finalize(url || it.img || '');
-      reader.readAsDataURL(file);
+      try{
+        const pubUrl = await uploadImageToStorage(file);
+        await finalize(pubUrl);
+      }catch(err){
+        console.error(err);
+        await finalize(url || it.img || '');
+      }
     } else {
-      finalize(url || it.img || '');
+      await finalize(url || it.img || '');
     }
   }
 
@@ -896,12 +978,13 @@ if (itemForm) {
       const defaultUrl = 'https://images.unsplash.com/photo-1543352634-8730b1c3c34b?q=80&w=1200&auto=format&fit=crop';
       let imgSrc;
       if (file) {
-        imgSrc = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = () => resolve(urlField || defaultUrl);
-          reader.readAsDataURL(file);
-        });
+        // NEW: ارفع إلى Storage بدلاً من Base64
+        try{
+          imgSrc = await uploadImageToStorage(file);
+        }catch(err){
+          setText('#itemMsg', 'تعذّر رفع الصورة: ' + (err?.message || ''));
+          imgSrc = urlField || defaultUrl;
+        }
       } else {
         imgSrc = urlField || defaultUrl;
       }
