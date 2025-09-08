@@ -933,7 +933,10 @@ try{
     Modal.info('لا يمكنك التقييم إلا بعد طلب هذا الصنف على هذا الجهاز.','غير مسموح');
     return;
   }
-
+  if(userHasRatedItem(id)){
+    Modal.info('لقد قُمت بتقييم هذا الصنف مسبقاً.','تم التقييم');
+    return;
+  }
 
   const items = LS.get('menuItems', []);
   const it = items.find(x => String(x.id) === String(id)); 
@@ -1196,7 +1199,10 @@ document.addEventListener('click', (e)=>{
   const id = wrap?.dataset?.id;
   if(!id) return;
 
- 
+  if(userHasRatedItem(id)){
+    Modal.info('لقد قُمت بتقييم هذا الصنف مسبقاً.','تم التقييم');
+    return;
+  }
   if(!userHasOrderedItem(id)){
     Modal.info('لا يمكنك التقييم إلا بعد طلب هذا الصنف على هذا الجهاز.','غير مسموح');
     return;
