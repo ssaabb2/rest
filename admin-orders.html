@@ -709,7 +709,7 @@ async function setStatus(id, st){
                 order_name: order.orderName,
                 phone: '',
                 table_no: order.table,
-                notes: '(طلب من الأدمن)',
+                notes: '',
                 items: selected.map(x=>({ id:x.itemId, name:x.name, price:x.price, qty:x.qty }))
               });
             }catch(e){
