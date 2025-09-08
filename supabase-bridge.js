@@ -281,6 +281,23 @@ export async function deleteCategorySB(id){
 }
 
 // ---------- Menu Items (create / update / delete) ----------
+// رفع صورة إلى Storage وإرجاع رابطها العام
+export async function uploadMenuImageToStorage(file){
+  const sb = window.supabase;
+  const bucket = 'menu-images';
+  const ext = (file?.name?.split('.').pop() || 'jpg').toLowerCase().replace('jpeg','jpg');
+  const path = `menu/${crypto.randomUUID()}.${ext}`;
+
+  const { error } = await sb.storage.from(bucket).upload(path, file, {
+    contentType: file.type || 'image/jpeg',
+    upsert: false
+  });
+  if (error) throw error;
+
+  const { data } = sb.storage.from(bucket).getPublicUrl(path);
+  return data.publicUrl;
+}
+
 export async function createMenuItemSB({ name, desc='', price=0, img='', cat_id=null, available=true, fresh=false }){
   const sb = window.supabase;
   const ins = await sb.from('menu_items').insert([{
@@ -485,6 +502,8 @@ window.supabaseBridge = {
   deleteCategorySB,
   createMenuItemSB,
   updateMenuItemSB,
+  uploadMenuImageToStorage,
+
   deleteMenuItemSB,   // <— أُضيفت هنا
   createReservationSB,
   updateReservationSB,
