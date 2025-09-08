@@ -266,7 +266,7 @@
       try{ updateAll(); }catch(e){} // refresh KPIs في admin.js
     }
 
-    // Actions
+    // Actions (محلية للحالات فقط)
     window.advanceStatus = function(id){
       const orders = LS.get('orders', []);
       const o = orders.find(x=>x.id===id); if(!o) return;
@@ -286,13 +286,26 @@
     }
 
     /* ===== حذف/إلغاء ===== */
-    function deleteOrder(id){
-      let orders = LS.get('orders', []);
-      orders = orders.filter(o => o.id !== id);
-      LS.set('orders', orders);
-      renderKDS(); updateCounts();
-      try{ updateAll(); }catch(e){}
-      notify(`تم حذف الطلب #${fmt(id)}`, '');
+    async function deleteOrder(id){
+      // تعطيل أزرار البطاقة أثناء التنفيذ
+      const btns = document.querySelectorAll(`.kds-card[data-id="${id}"] .kds-foot .btn`);
+      btns.forEach(b=>{ b.disabled=true; b.setAttribute('aria-busy','true'); });
+      try{
+        if (window.supabaseBridge?.deleteOrderSB) {
+          await window.supabaseBridge.deleteOrderSB(id);
+        } else {
+          // Fallback محلي فقط (لو الجسر غير محمّل)
+          let orders = LS.get('orders', []).filter(o => o.id !== id);
+          LS.set('orders', orders);
+        }
+        renderKDS(); updateCounts(); try{ updateAll(); }catch(e){}
+        notify(`تم حذف الطلب #${fmt(id)}`, '');
+      }catch(e){
+        console.error(e);
+        Modal.info('تعذّر حذف الطلب من القاعدة. لم يتم الحذف.', 'خطأ');
+      }finally{
+        btns.forEach(b=>{ b.disabled=false; b.removeAttribute('aria-busy'); });
+      }
     }
 
     window.cancelOrDelete = function(id){
@@ -369,7 +382,8 @@
 
       const save = document.createElement('button');
       save.className = 'btn btn-primary'; save.textContent = 'حفظ';
-      save.onclick = ()=>{
+      save.onclick = async ()=>{
+        // اجمع الحقول
         const rows = Array.from(document.querySelectorAll('#addsWrap .add-row'));
         const list = rows.map(r=>{
           const [t,p] = r.querySelectorAll('input');
@@ -391,11 +405,28 @@
 
         o.discountPct = discPct;
         o.discount = Number(discVal.toFixed(2));
-
         o.total       = Number(newTotal.toFixed(2));
         o.itemCount   = (o.items||[]).reduce((a,b)=> a + (Number(b.qty)||0), 0);
 
+        // احفظ محلياً أولاً
         LS.set('orders', orders);
+
+        // ثم حاول تحديث القاعدة
+        try{
+          if (window.supabaseBridge?.updateOrderSB) {
+            save.disabled = true; save.setAttribute('aria-busy','true');
+            await window.supabaseBridge.updateOrderSB(id, {
+              notes: o.notes,
+              total: o.total
+            });
+          }
+        }catch(e){
+          console.error(e);
+          Modal.info('تم الحفظ محلياً فقط. لم يُحدَّث في القاعدة.', 'تنبيه');
+        }finally{
+          save.disabled = false; save.removeAttribute('aria-busy');
+        }
+
         Modal.hide();
         try{ renderKDS(); updateAll(); }catch(e){}
       };
@@ -605,7 +636,7 @@
 
       const ok = document.createElement('button'); ok.className='btn btn-primary'; ok.textContent='إنشاء طلب تجريبي';
       const cancel = document.createElement('button'); cancel.className='btn btn-ghost'; cancel.textContent='إلغاء'; 
-      const releaseDemoBtn = ()=>{ demoBtn.disabled=false; demoBtn.removeAttribute('aria-busy'); };
+      const releaseDemoBtn = ()=>{ demoBtn.disabled = false; demoBtn.removeAttribute('aria-busy'); };
 
       cancel.onclick=()=>{ releaseDemoBtn(); Modal.hide(); };
 
