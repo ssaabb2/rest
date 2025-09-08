@@ -253,8 +253,11 @@
       const ns = LS.get('notifications', []);
       ns.unshift({id:crypto.randomUUID(), type:'order', title:t, message:msg||'', time:nowISO(), read:false});
       LS.set('notifications', ns);
-      try{ updateNotifCount(); renderNotifs(); }catch(e){}
+      // ✅ استدعاءات آمنة بدون try شامل
+      if (typeof updateNotifCount === 'function') updateNotifCount();
+      if (typeof renderNotifs === 'function') renderNotifs();
     }
+
 async function setStatus(id, st){
   const orders = LS.get('orders', []);
   const o = orders.find(x=>x.id===id); if(!o) return;
@@ -799,6 +802,8 @@ async function setStatus(id, st){
     </div>
   </div>
 
+  <!-- ✅ حمّل admin.js قبل admin-multipage.js -->
+  <script src="admin.js"></script>
   <script src="admin-multipage.js"></script>
 </body>
 </html>
