@@ -66,7 +66,6 @@
       background:#fee2e2; border:1px solid #fecaca; color:#b91c1c;
     }
     .btn-danger:hover{ background:#fecaca }
-    /* إذن تبقى .btn و .btn-ghost و .btn-primary كما في styles.css العامة */
 
     /* ذيل الجدول */
     .table-footer{
@@ -224,13 +223,13 @@
 
     const R = { q:'', stars:'all', page:1, size: Number(localStorage.getItem('rat_page_size')||10) };
 
-    function listAll(){ return (LS.get('ratings',[])||[]).slice().sort((a,b)=> (b.time||'') .localeCompare(a.time||'')); }
+    function listAll(){ return (LS.get('ratings',[])||[]).slice().sort((a,b)=> (b.time||'').localeCompare(a.time||'')); }
     function itemsById(){ const map={}; (LS.get('menuItems',[])||[]).forEach(i=> map[i.id]=i); return map; }
 
     function starHtml(s){
       const n = Math.max(1, Math.min(5, Number(s)||1));
       let h = '<span class="stars-sm">';
-      for(let i=1;i<=5;i++) h += \`<span class="s \${i<=n?'':'off'}"></span>\`;
+      for(let i=1;i<=5;i++) h += `<span class="s ${i<=n?'':'off'}"></span>`;
       return h + '</span>';
     }
 
@@ -288,20 +287,19 @@
         body.innerHTML = pageRows.map((r,i)=>{
           const idx = start + i + 1;
           const safeId = JSON.stringify(r.id);
-          const byId = itemsById();
           const name = r.name || byId[r.itemId]?.name || '—';
-          return \`<tr>
-            <td class="mono">\${fmtNum(idx)}</td>
-            <td>\${name}</td>
-            <td class="nowrap" title="\${fmtNum(r.stars)}">\${starHtml(r.stars)} <span class="small" style="margin-inline-start:6px">(\${fmtNum(r.stars)})</span></td>
-            <td class="nowrap">\${toLocal(r.time)}</td>
+          return `<tr>
+            <td class="mono">${fmtNum(idx)}</td>
+            <td>${name}</td>
+            <td class="nowrap" title="${fmtNum(r.stars)}">${starHtml(r.stars)} <span class="small" style="margin-inline-start:6px">(${fmtNum(r.stars)})</span></td>
+            <td class="nowrap">${toLocal(r.time)}</td>
             <td class="col-ops">
               <div class="ops-inline">
-                <button class="btn btn-ghost btn-sm btn-pill" onclick='__rt.edit(\${safeId})'>تعديل</button>
-                <button class="btn btn-danger btn-sm btn-pill" onclick='__rt.remove(\${safeId})'>حذف</button>
+                <button class="btn btn-ghost btn-sm btn-pill" onclick='__rt.edit(${safeId})'>تعديل</button>
+                <button class="btn btn-danger btn-sm btn-pill" onclick='__rt.remove(${safeId})'>حذف</button>
               </div>
             </td>
-          </tr>\`;
+          </tr>`;
         }).join('');
       }
 
@@ -315,17 +313,17 @@
       const items = LS.get('menuItems',[])||[];
       if(items.length===0){ window.Modal.info('لا يوجد أصناف لإضافة تقييم لها.'); return; }
       const byId = itemsById();
-      const opts = items.map(it => \`<option value="\${it.id}">\${it.name}</option>\`).join('');
+      const opts = items.map(it => `<option value="${it.id}">${it.name}</option>`).join('');
 
-      const html = \`
+      const html = `
         <div class="form">
           <label class="app-label">الصنف</label>
-          <select id="newItem" class="input">\${opts}</select>
+          <select id="newItem" class="input">${opts}</select>
 
           <label class="app-label">التقييم (1–5)</label>
-          <input id="newStars" class="input" type="number" min="1" max="5" value="\${Math.max(1,Math.min(5, Number(preset)||5))}" />
+          <input id="newStars" class="input" type="number" min="1" max="5" value="${Math.max(1,Math.min(5, Number(preset)||5))}" />
         </div>
-      \`;
+      `;
       const save = document.createElement('button'); save.className='btn btn-primary btn-pill'; save.textContent='حفظ';
       const cancel = document.createElement('button'); cancel.className='btn btn-ghost btn-pill'; cancel.textContent='إلغاء';
 
@@ -348,7 +346,7 @@
 
         try{
           if(window.supabaseBridge?.createRatingSB){
-            // الحفظ في Supabase ثم إضافة النتيجة محليًا (لتفادي ازدواجية المزامنة)
+            // الحفظ في Supabase ثم إضافة النتيجة محليًا
             const row = await window.supabaseBridge.createRatingSB({ item_id: itemId, stars: v });
             addLocal(row, itemId, v);
           }else{
@@ -398,18 +396,18 @@
         }
         const byId = itemsById();
         const opts = items.map(it =>
-          \`<option value="\${it.id}" \${it.id===r.itemId ? 'selected' : ''}>\${it.name}</option>\`
+          `<option value="${it.id}" ${it.id===r.itemId ? 'selected' : ''}>${it.name}</option>`
         ).join('');
 
-        const html = \`
+        const html = `
           <div class="form">
             <label class="app-label">الصنف</label>
-            <select id="edItem" class="input">\${opts}</select>
+            <select id="edItem" class="input">${opts}</select>
 
             <label class="app-label">التقييم (1–5)</label>
-            <input id="edStars" class="input" type="number" min="1" max="5" value="\${Number(r.stars)||1}" />
+            <input id="edStars" class="input" type="number" min="1" max="5" value="${Number(r.stars)||1}" />
           </div>
-        \`;
+        `;
         const save = document.createElement('button'); save.className='btn btn-primary btn-pill'; save.textContent='حفظ';
         const cancel = document.createElement('button'); cancel.className='btn btn-ghost btn-pill'; cancel.textContent='إلغاء';
 
@@ -446,7 +444,7 @@
       const lines = [head.join(',')];
       rows.forEach((r,i)=>{
         const name = (r.name || byId[r.itemId]?.name || '').replace(/"/g,'""');
-        lines.push([i+1, r.itemId, \`"\${name}"\`, r.stars, r.time||''].join(','));
+        lines.push([i+1, r.itemId, `"${name}"`, r.stars, r.time||''].join(','));
       });
       const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
       const a = document.createElement('a');
