@@ -1065,6 +1065,12 @@ window.addEventListener('hashchange', setActivePrimaryLink);
 }
 renderSideCats();
 window.addEventListener('storage', (e)=>{ if(e.key==='categories') { renderSideCats(); renderCats(); } });
+document.addEventListener('sb:public-synced', () => {
+  try { renderSideCats(); } catch(e){}
+  try { renderCats(); } catch(e){}
+  try { renderItems(); } catch(e){}
+}, { once:true });
+
 
 // تحريك المؤشر بعد تحميل كل شيء (لضمان القياسات)
 window.addEventListener('load', moveCatUnderline);
