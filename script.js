@@ -18,8 +18,8 @@ const nowISO = ()=> new Date().toISOString();
 function seedIfNeeded(){
 
   // لا نُضيف بيانات تجريبية. فقط نضمن وجود المفاتيح كمصفوفات فارغة
-if(!localStorage.getItem('categories')) LS.set('categories', []);
-if(!localStorage.getItem('menuItems'))  LS.set('menuItems', []);
+  if(!localStorage.getItem('categories')) LS.set('categories', []);
+  if(!localStorage.getItem('menuItems'))  LS.set('menuItems', []);
 
   if(!localStorage.getItem('orders')) LS.set('orders', []);
   if(!localStorage.getItem('notifications')) LS.set('notifications', []);
@@ -333,10 +333,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
       // [FIX] لفّ النداء بـ try/catch
       try{
-               await window.supabaseBridge.createReservationSB({
+        await window.supabaseBridge.createReservationSB({
           name, phone, iso: `${date}T${time}`, people: ppl, kind: type, notes, duration_minutes: 90
         });
-
 
         // إشعار لصفحة لوحة التحكم
         const ns = LS.get('notifications', []);
@@ -507,8 +506,13 @@ function filteredItems(){
 
 /* ===== Rating helpers ===== */
 function userHasOrderedItem(itemId){
+  // ✅ فحص مرن لكلٍ من itemId و id وبالمقارنة كنص لتفادي اختلاف النوع
   const orders = LS.get('orders', []);
-  return orders.some(o => Array.isArray(o.items) && o.items.some(it => it.itemId === itemId));
+  const want = String(itemId);
+  return orders.some(o =>
+    Array.isArray(o.items) &&
+    o.items.some(it => String(it.itemId) === want || String(it.id) === want)
+  );
 }
 function userHasRatedItem(itemId){
   const rated = LS.get('userRated', {});
@@ -535,11 +539,10 @@ function renderItems(){
           ${i.fresh?'<span class="img-badge">طازج</span>':""}
         </div>
         <div class="item-body">
-                 <div class="item-title">
+          <div class="item-title">
             <h3>${i.name}</h3>
             <div class="price"><span>${formatPrice(i.price)}</span> ل.س</div>
           </div>
-
 
           <div class="item-desc">${i.desc||''}</div>
 
@@ -554,7 +557,7 @@ function renderItems(){
             </div>
           </div>
 
-                  <div class="item-actions">
+          <div class="item-actions">
             <button class="btn btn-primary" onclick="addToCart('${i.id}', event)">أضِف إلى السلة</button>
           </div>
 
@@ -853,8 +856,6 @@ function askOrderInfo(){
   });
 }
 
-
-
 /* =====================================================
    Checkout
 ===================================================== */
@@ -875,34 +876,43 @@ if(checkoutBtn){
 
     const info = await askOrderInfo();
     if(!info) return;
-const { table, notes } = info;
+    const { table, notes } = info;
 
-// بناء الأصناف + الإجمالي موجودين عندك فوق
-// [FIX] تحقّق من الجسر ولفّ النداء بـ try/catch
-try{
-  if(!window.supabaseBridge || !window.supabaseBridge.createOrderSB){
-    throw new Error('Supabase bridge not ready');
-  }
-  await window.supabaseBridge.createOrderSB({
-    order_name: '',
-    phone: '',
-    table_no: table,
-    notes,
-    items: orderItems.map(x => ({ id: x.itemId, name: x.name, price: x.price, qty: x.qty }))
-  });
+    // [FIX] تحقّق من الجسر ولفّ النداء بـ try/catch
+    try{
+      if(!window.supabaseBridge || !window.supabaseBridge.createOrderSB){
+        throw new Error('Supabase bridge not ready');
+      }
+      await window.supabaseBridge.createOrderSB({
+        order_name: '',
+        phone: '',
+        table_no: table,
+        notes,
+        items: orderItems.map(x => ({ id: x.itemId, name: x.name, price: x.price, qty: x.qty }))
+      });
 
-  // تنظيف السلة وعرض نجاح (ابقِ منطقك كما هو) — [FIX] عرض مرّة واحدة
-  if(!__orderSuccessShown){
-    LS.set('cart', []); updateCartCount(); renderCart(); closeCart();
-    Modal.info('تم إرسال الطلب بنجاح! ستصلك رسالة تأكيد قريباً.','نجاح');
-    __orderSuccessShown = true;
-  }
-}catch(e){
-  console.error(e);
-  Modal.info('تعذّر إرسال الطلب، حاول لاحقاً.','خطأ');
-  return;
-}
+      // ✅ خزّن الطلب محليًا حتى ينجح شرط "طلبت الصنف" فورًا
+      const orders = LS.get('orders', []);
+      orders.unshift({
+        id: orderId,
+        table_no: table,
+        notes,
+        items: orderItems.map(x => ({ itemId: x.itemId, qty: x.qty })),
+        time: nowISO()
+      });
+      LS.set('orders', orders);
 
+      // تنظيف السلة وعرض نجاح — [FIX] عرض مرّة واحدة
+      if(!__orderSuccessShown){
+        LS.set('cart', []); updateCartCount(); renderCart(); closeCart();
+        Modal.info('تم إرسال الطلب بنجاح! ستصلك رسالة تأكيد قريباً.','نجاح');
+        __orderSuccessShown = true;
+      }
+    }catch(e){
+      console.error(e);
+      Modal.info('تعذّر إرسال الطلب، حاول لاحقاً.','خطأ');
+      return;
+    }
 
     const notifs = LS.get('notifications', []);
     notifs.unshift({ id: crypto.randomUUID(), type:'order', title:`طلب جديد #${formatInt(orderId)}`, message:`إجمالي: ${formatPrice(total)} ل.س`, time: nowISO(), read:false });
@@ -914,18 +924,13 @@ try{
       Modal.info('تم إرسال الطلب بنجاح! ستصلك رسالة تأكيد قريباً.','نجاح');
       __orderSuccessShown = true;
     }
-
-/*
-    LS.set('cart', []); updateCartCount(); renderCart(); closeCart();
-    Modal.info('تم إرسال الطلب بنجاح! ستصلك رسالة تأكيد قريباً.','نجاح');
-*/
   });
 }
 
 /* =====================================================
    Rating
 ===================================================== */
-function rateItem(id, stars){
+async function rateItem(id, stars){
   if(!userHasOrderedItem(id)){
     Modal.info('لا يمكنك التقييم إلا بعد طلب هذا الصنف على هذا الجهاز.','غير مسموح');
     return;
@@ -938,21 +943,37 @@ function rateItem(id, stars){
   const items = LS.get('menuItems', []);
   const it = items.find(x=>x.id===id); if(!it) return;
 
+  // حدّث المتوسط والعدد محليًا لظهور الأثر فورًا
   const rating = it.rating || {avg:0, count:0};
   const totalScore = rating.avg * rating.count + stars;
   rating.count += 1;
   rating.avg = +(totalScore / rating.count).toFixed(2);
   it.rating = rating; LS.set('menuItems', items);
 
+  // خزّن سجل مبسّط محليًا (للوحة الأدمن/التقارير)
   const rs = LS.get('ratings', []);
   rs.unshift({id:crypto.randomUUID(), itemId:id, stars, time:nowISO(), name:it.name});
   LS.set('ratings', rs);
 
+  // ✅ علّم أنه تم التقييم "مرة واحدة" على هذا الجهاز
+  const rated = LS.get('userRated', {});
+  rated[id] = true;
+  LS.set('userRated', rated);
+
+  // إشعار محلي (اختياري)
   const notifs = LS.get('notifications', []);
   notifs.unshift({ id: crypto.randomUUID(), type:'rating', title:`تقييم جديد (${stars}★)`, message:`${it.name}`, time: nowISO(), read:false });
   LS.set('notifications', notifs);
 
+  // أعد الرسم لإقفال النجوم فورًا
   renderItems();
+
+  // محاولة إرسال التقييم إلى Supabase
+  try{
+    await window.supabaseBridge?.createRatingSB?.({ item_id: id, stars });
+  }catch(e){
+    console.warn('DB rating failed:', e);
+  }
 }
 
 /* =====================================================
@@ -1016,17 +1037,17 @@ function renderSideCats(){
           moveCatUnderline();
         }
         // إبقاء تمييز الرابط حسب القسم الحالي (hash) في القائمة الأساسية
-function setActivePrimaryLink(){
-  const links = document.querySelectorAll('.primary-links a');
-  const current = (location.hash || '#home').toLowerCase();
-  links.forEach(a => {
-    const href = (a.getAttribute('href') || '').toLowerCase();
-    a.classList.toggle('active', href === current);
-  });
-}
-// شغّلها عند التحميل وتغيّر الهاش
-document.addEventListener('DOMContentLoaded', setActivePrimaryLink);
-window.addEventListener('hashchange', setActivePrimaryLink);
+        function setActivePrimaryLink(){
+          const links = document.querySelectorAll('.primary-links a');
+          const current = (location.hash || '#home').toLowerCase();
+          links.forEach(a => {
+            const href = (a.getAttribute('href') || '').toLowerCase();
+            a.classList.toggle('active', href === current);
+          });
+        }
+        // شغّلها عند التحميل وتغيّر الهاش
+        document.addEventListener('DOMContentLoaded', setActivePrimaryLink);
+        window.addEventListener('hashchange', setActivePrimaryLink);
 
       }else{
         state.activeCat = id;
@@ -1042,8 +1063,6 @@ window.addEventListener('storage', (e)=>{ if(e.key==='categories') { renderSideC
 
 // تحريك المؤشر بعد تحميل كل شيء (لضمان القياسات)
 window.addEventListener('load', moveCatUnderline);
-
-
 
 document.addEventListener('DOMContentLoaded', setupHours);
 
