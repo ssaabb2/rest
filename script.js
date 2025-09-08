@@ -121,6 +121,16 @@ function injectUnderlineStyle(){
 }
 injectUnderlineStyle();
 
+/* ✅ حقن ستايل لتعطيل النجوم لمن لم يطلب الصنف */
+function injectRatingGuardStyle(){
+  if(document.getElementById('ratingGuardStyle')) return;
+  const s = document.createElement('style');
+  s.id = 'ratingGuardStyle';
+  s.textContent = `.stars.disabled{pointer-events:none;opacity:.55;filter:grayscale(.15)}`
+  document.head.appendChild(s);
+}
+injectRatingGuardStyle();
+
 /* ---------- Underline slider + Section spy ---------- */
 function ensureCatUnderline(){
   if(!catRibbon) return null;
@@ -527,10 +537,12 @@ function renderItems(){
 
   // === بطاقة: السعر يمين + زر يسار + نجوم RTL جزئية + متوسط ملون ===
   function cardHTML(i){
+    const canRate = userHasOrderedItem(i.id);
     const already = userHasRatedItem(i.id);
     const avgRaw  = Math.max(0, Math.min(5, Number(i.rating?.avg || 0)));
     const avgTxt  = formatAvg(avgRaw);
     const avgClass= avgRaw >= 4.5 ? 'rate-good' : (avgRaw >= 3 ? 'rate-mid' : 'rate-bad');
+    const rateTitle = already ? 'تم التقييم سابقاً' : (canRate ? 'اضغط للتقييم' : 'يمكنك التقييم بعد طلب الصنف');
 
     return `
       <div class="card">
@@ -547,7 +559,9 @@ function renderItems(){
           <div class="item-desc">${i.desc||''}</div>
 
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px">
-            <div class="stars ${already?'is-rated':''}" data-id="${i.id}" title="${already?'تم التقييم سابقاً':'اضغط للتقييم'}">
+            <div class="stars ${already?'is-rated':''} ${!canRate?'disabled':''}"
+                 data-id="${i.id}"
+                 title="${rateTitle}">
               ${[5,4,3,2,1].map(n=>{
                 const f = Math.max(0, Math.min(1, avgRaw - (5 - n))); // املأ من اليمين إلى اليسار
                 return starSVGFrac(f, `${i.id}-${n}`);
@@ -608,9 +622,9 @@ function renderItems(){
     moveCatUnderline();
   }
 
-  // ربط التقييم (DOM order الآن من اليمين لليسار: أول نجمة = 1)
+  // ربط التقييم — تجاهل العناصر المقفلة/المقيّمة
   document.querySelectorAll('.stars').forEach(el=>{
-    if(el.classList.contains('is-rated')) return;
+    if(el.classList.contains('is-rated') || el.classList.contains('disabled')) return;
     const id = el.getAttribute('data-id');
     el.querySelectorAll('.star').forEach((star, idx)=>{
       star.addEventListener('click', ()=>rateItem(id, idx+1));
@@ -924,262 +938,4 @@ if(checkoutBtn){
       Modal.info('تم إرسال الطلب بنجاح! ستصلك رسالة تأكيد قريباً.','نجاح');
       __orderSuccessShown = true;
     }
-  });
-}
-
-/* =====================================================
-   Rating
-===================================================== */
-async function rateItem(id, stars){
-  if(!userHasOrderedItem(id)){
-    Modal.info('لا يمكنك التقييم إلا بعد طلب هذا الصنف على هذا الجهاز.','غير مسموح');
-    return;
-  }
-  if(userHasRatedItem(id)){
-    Modal.info('لقد قُمت بتقييم هذا الصنف مسبقاً.','تم التقييم');
-    return;
-  }
-
-  const items = LS.get('menuItems', []);
-  const it = items.find(x=>x.id===id); if(!it) return;
-
-  // حدّث المتوسط والعدد محليًا لظهور الأثر فورًا
-  const rating = it.rating || {avg:0, count:0};
-  const totalScore = rating.avg * rating.count + stars;
-  rating.count += 1;
-  rating.avg = +(totalScore / rating.count).toFixed(2);
-  it.rating = rating; LS.set('menuItems', items);
-
-  // خزّن سجل مبسّط محليًا (للوحة الأدمن/التقارير)
-  const rs = LS.get('ratings', []);
-  rs.unshift({id:crypto.randomUUID(), itemId:id, stars, time:nowISO(), name:it.name});
-  LS.set('ratings', rs);
-
-  // ✅ علّم أنه تم التقييم "مرة واحدة" على هذا الجهاز
-  const rated = LS.get('userRated', {});
-  rated[id] = true;
-  LS.set('userRated', rated);
-
-  // إشعار محلي (اختياري)
-  const notifs = LS.get('notifications', []);
-  notifs.unshift({ id: crypto.randomUUID(), type:'rating', title:`تقييم جديد (${stars}★)`, message:`${it.name}`, time: nowISO(), read:false });
-  LS.set('notifications', notifs);
-
-  // أعد الرسم لإقفال النجوم فورًا
-  renderItems();
-
-  // محاولة إرسال التقييم إلى Supabase
-  try{
-    await window.supabaseBridge?.createRatingSB?.({ item_id: id, stars });
-  }catch(e){
-    console.warn('DB rating failed:', e);
-  }
-}
-
-/* =====================================================
-   Front Sidebar
-===================================================== */
-const menuBtn       = document.querySelector('#menuBtn');
-const frontSidebar  = document.querySelector('#frontSidebar');
-const closeFrontBtn = document.querySelector('#closeFront');
-const sideCatsBox   = document.querySelector('#sideCats');
-
-function openFront(){
-  if(!frontSidebar) return;
-  frontSidebar.classList.add('open');
-  frontSidebar.setAttribute('aria-hidden','false');
-  if(menuBtn) menuBtn.setAttribute('aria-expanded','true');
-}
-function closeFront(){
-  if(!frontSidebar) return;
-  frontSidebar.classList.remove('open');
-  frontSidebar.setAttribute('aria-hidden','true');
-  if(menuBtn) menuBtn.setAttribute('aria-expanded','false');
-}
-if(menuBtn) menuBtn.addEventListener('click', (e)=>{ e.stopPropagation(); openFront(); });
-if(closeFrontBtn) closeFrontBtn.addEventListener('click', closeFront);
-
-document.addEventListener('click', (e)=>{
-  if(!frontSidebar || !frontSidebar.classList.contains('open')) return;
-  const inside = frontSidebar.contains(e.target) || (menuBtn && menuBtn.contains(e.target));
-  if(!inside) closeFront();
-});
-document.addEventListener('keydown', (e)=>{
-  if(e.key==='Escape'){ closeFront(); closeCart(); closeSearchPanel(); }
-});
-
-// إغلاق القائمة الجانبية عند الضغط على أي رابط داخلها
-document.querySelectorAll('#frontSidebar a').forEach(function(link){
-  link.addEventListener('click', function(){
-    document.getElementById('frontSidebar').classList.remove('open');
-    document.body.classList.remove('sidebar-open');
-    document.getElementById('menuBtn').setAttribute('aria-expanded','false');
-  }, {passive:true});
-});
-
-function renderSideCats(){
-  if(!sideCatsBox) return;
-  const cats = LS.get('categories', []);
-  const list = cats.filter(c=>c.id!=='all');
-  sideCatsBox.innerHTML = list.map(c =>
-    `<a href="#" data-id="${c.id}" class="${state.activeCat===c.id?'active':''}">${c.name}</a>`
-  ).join('');
-  sideCatsBox.querySelectorAll('a').forEach(a=>{
-    a.addEventListener('click', (ev)=>{
-      ev.preventDefault();
-      const id = a.getAttribute('data-id');
-      if(state.activeCat==='sections'){
-        const sec = document.getElementById('sec-'+id);
-        if (sec) sec.scrollIntoView({ behavior:'smooth', block:'start' });
-        // مزامنة الشريط والسلايدر
-        if(catRibbon){
-          catRibbon.querySelectorAll('.pill').forEach(b=> b.classList.toggle('active', b.dataset.id === id));
-          moveCatUnderline();
-        }
-        // إبقاء تمييز الرابط حسب القسم الحالي (hash) في القائمة الأساسية
-        function setActivePrimaryLink(){
-          const links = document.querySelectorAll('.primary-links a');
-          const current = (location.hash || '#home').toLowerCase();
-          links.forEach(a => {
-            const href = (a.getAttribute('href') || '').toLowerCase();
-            a.classList.toggle('active', href === current);
-          });
-        }
-        // شغّلها عند التحميل وتغيّر الهاش
-        document.addEventListener('DOMContentLoaded', setActivePrimaryLink);
-        window.addEventListener('hashchange', setActivePrimaryLink);
-
-      }else{
-        state.activeCat = id;
-        renderItems();
-        renderCats();
-      }
-      closeFront();
-    });
-  });
-}
-renderSideCats();
-window.addEventListener('storage', (e)=>{ if(e.key==='categories') { renderSideCats(); renderCats(); } });
-
-// تحريك المؤشر بعد تحميل كل شيء (لضمان القياسات)
-window.addEventListener('load', moveCatUnderline);
-
-document.addEventListener('DOMContentLoaded', setupHours);
-
-function setupHours(){
-  const wrap  = document.getElementById('hoursList');
-  const badge = document.getElementById('openNowBadge');
-  if(!wrap || !badge) return;
-
-  // إعدادات الوقت: 9:00 صباحًا إلى 1:00 صباحًا (اليوم التالي)
-  const OPEN_MIN  = 9*60;   // 09:00
-  const CLOSE_MIN = 25*60;  // 01:00 (+24h)
-
-  // ترتيب الأيام مطابق لـ getDay(): 0=الأحد … 6=السبت
-  const days = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
-
-  // دقائق منذ بداية الأسبوع (الأحد 00:00)
-  function nowAbsMinutes(){
-    const n = new Date();
-    return n.getDay()*1440 + n.getHours()*60 + n.getMinutes();
-  }
-
-  // هل الآن ضمن أي نافذة عمل (مع مراعاة الامتداد بعد منتصف الليل)؟
-  function isOpenNow(){
-    const now = nowAbsMinutes();
-    const WEEK = 7*1440;
-    for(let d=0; d<7; d++){
-      const start = d*1440 + OPEN_MIN;      // d 09:00
-      const end   = d*1440 + CLOSE_MIN;     // d 25:00 => 01:00 لليوم التالي
-      if( (now >= start && now < end) || (end > WEEK && (now+WEEK) >= start && (now+WEEK) < end) ){
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // فورمات 12 ساعة (1–12 فقط) + ص/م
-  function fmt12(hh, mm){
-    const am = hh < 12;
-    let h = hh % 12; if(h === 0) h = 12;
-    return `${h}:${String(mm).padStart(2,'0')} ${am?'ص':'م'}`;
-  }
-  function fmtFromMinutes(mins){
-    const H = Math.floor((mins%1440)/60);
-    const M = (mins%60);
-    return fmt12(H, M);
-  }
-
-  // بناء الصفوف
-  const today = new Date().getDay(); // 0..6 (0=الأحد)
-  const startStr = fmtFromMinutes(OPEN_MIN);   // 9:00 ص
-  const endStr   = fmtFromMinutes(CLOSE_MIN);  // 1:00 ص
-
-  wrap.innerHTML = days.map((name, idx)=>{
-    const isToday = idx === today;
-    const stClass = isToday ? 'badge ' + (isOpenNow()?'open':'closed') : 'badge neutral';
-    const stText  = isToday ? (isOpenNow()?'مفتوح الآن':'مغلق الآن') : '—';
-    return `
-      <div class="hours-row ${isToday?'today':''}">
-        <div class="day">${name}</div>
-        <div class="time">${startStr} — ${endStr}</div>
-        <div class="st"><span class="${stClass} small">${stText}</span></div>
-      </div>
-    `;
-  }).join('');
-
-  // شارة الحالة أعلى الكارد
-  if(isOpenNow()){
-    badge.className = 'badge small open';
-    badge.textContent = 'مفتوح الآن';
-  }else{
-    badge.className = 'badge small closed';
-    badge.textContent = 'مغلق الآن';
-  }
-}
-/* ==== Force English digits sitewide (٠-٩ / ۰-۹ -> 0-9) ==== */
-(function(){
-  const map = {
-    '٠':'0','١':'1','٢':'2','٣':'3','٤':'4','٥':'5','٦':'6','٧':'7','٨':'8','٩':'9',
-    '۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9'
-  };
-  const re = /[٠-٩۰-۹]/g;
-  const norm = s => s.replace(re, ch => map[ch] || ch);
-
-  // بدّل كل النصوص الظاهرة عند التحميل
-  function walk(node){
-    if(node.nodeType === Node.TEXT_NODE){
-      const t = node.nodeValue, nt = norm(t);
-      if(t !== nt) node.nodeValue = nt;
-      return;
-    }
-    if(node.nodeName === 'SCRIPT' || node.nodeName === 'STYLE') return;
-    for(let i=0;i<node.childNodes.length;i++) walk(node.childNodes[i]);
-  }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    walk(document.body);
-
-    // راقب أي محتوى يُضاف ديناميكياً وطبّق التطبيع عليه
-    const mo = new MutationObserver(muts=>{
-      for(const m of muts){
-        if(m.type === 'characterData'){ walk(m.target); }
-        m.addedNodes && m.addedNodes.forEach(n => walk(n));
-      }
-    });
-    mo.observe(document.body, { childList:true, subtree:true, characterData:true });
-
-    // طبّع إدخال المستخدم في الحقول أثناء الكتابة
-    document.addEventListener('input', (e)=>{
-      const el = e.target;
-      if(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'){
-        const v = el.value, nv = norm(v);
-        if(v !== nv){
-          const pos = el.selectionStart;
-          el.value = nv;
-          try{ el.setSelectionRange(pos, pos); }catch(_){}
-        }
-      }
-    }, true);
-  });
-})();
+ 
