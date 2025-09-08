@@ -690,7 +690,7 @@ function editItem(id){
     }
   }
 
-  function submit(){
+async function submit(){
     const name = q('#ei_name').value.trim();
     const price = Number(q('#ei_price').value);
     const desc = q('#ei_desc').value.trim();
@@ -736,15 +736,17 @@ function editItem(id){
       }
     }
 
-    if (file){
-      const reader = new FileReader();
-      reader.onload = ()=> finalize(reader.result);
-      reader.onerror = ()=> finalize(url || it.img || '');
-      reader.readAsDataURL(file);
-    } else {
-      finalize(url || it.img || '');
-    }
+  if (file && window.supabaseBridge?.uploadMenuImageToStorage) {
+  try {
+    const imgUrl = await window.supabaseBridge.uploadMenuImageToStorage(file);
+    await finalize(imgUrl);
+  } catch (e) {
+    await finalize(url || it.img || '');
   }
+} else {
+  await finalize(url || it.img || '');
+}
+
 
   showModal({
     title:'تعديل صنف',
@@ -893,18 +895,19 @@ if (itemForm) {
     }
 
     try {
-      const defaultUrl = 'https://images.unsplash.com/photo-1543352634-8730b1c3c34b?q=80&w=1200&auto=format&fit=crop';
-      let imgSrc;
-      if (file) {
-        imgSrc = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = () => resolve(urlField || defaultUrl);
-          reader.readAsDataURL(file);
-        });
-      } else {
-        imgSrc = urlField || defaultUrl;
-      }
+ const defaultUrl = 'https://images.unsplash.com/photo-1543352634-8730b1c3c34b?q=80&w=1200&auto=format&fit=crop';
+let imgSrc;
+if (file && window.supabaseBridge?.uploadMenuImageToStorage) {
+  try {
+    imgSrc = await window.supabaseBridge.uploadMenuImageToStorage(file);
+  } catch (e) {
+    imgSrc = urlField || defaultUrl;
+  }
+} else {
+  imgSrc = urlField || defaultUrl;
+}
+await finalize(imgSrc);
+
       await finalize(imgSrc);
     } finally {
       // إعادة تفعيل الزر وفتح القفل
