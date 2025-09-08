@@ -43,25 +43,83 @@ const setHTML = (sel, html) => {
 };
 
 /* =====================================================
+   NEW: إعدادات رفع الصور + ضغط تلقائي
+===================================================== */
+const BUCKET = 'menu-images';      // اسم الـ bucket في Storage
+const MAX_BEFORE_COMPRESS = 1_500_000; // 1.5MB
+
+// ضغط الصورة إن كانت كبيرة (يُنتج JPEG حتى 1280px)
+async function compressImage(file, maxW = 1280, maxH = 1280, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((b) => {
+        if (!b) return reject(new Error('فشل ضغط الصورة'));
+        const out = new File([b], (file.name.replace(/\.[^.]+$/, '') || 'image') + '.jpg', { type: 'image/jpeg' });
+        resolve(out);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = () => reject(new Error('تعذّر قراءة الصورة'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/* =====================================================
    NEW: رفع صورة إلى Supabase Storage وإرجاع الرابط العام
-   - ضع اسم الباكِت: menu-images (عام Public)
+   - ضع اسم الباكِت: menu-images (عام Public + سياسات insert مفعلة)
 ===================================================== */
 async function uploadImageToStorage(file){
   const sb = window.supabase;
-  if (!sb || !file) throw new Error('Missing supabase client or file');
+  if (!sb || !file) throw new Error('Supabase client أو الملف غير موجود');
 
-  const ext = (file.name?.split('.').pop() || 'jpg').toLowerCase();
+  let upFile = file;
+
+  // جرّب ضغطًا خفيفًا إن كان الملف كبيرًا لتفادي 413
+  if (upFile.size > MAX_BEFORE_COMPRESS) {
+    try { upFile = await compressImage(upFile); } catch {}
+  }
+
+  // امتداد آمن
+  const ext = (upFile.name?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
   const path = `menu/${crypto.randomUUID()}.${ext}`;
 
-  const up = await sb.storage.from('menu-images').upload(path, file, {
+  const { data, error } = await sb.storage.from(BUCKET).upload(path, upFile, {
     cacheControl: '3600',
     upsert: false,
-    contentType: file.type || 'image/jpeg'
+    contentType: upFile.type || 'image/jpeg'
   });
-  if (up.error) throw up.error;
 
-  const { data } = sb.storage.from('menu-images').getPublicUrl(up.data.path);
-  return data.publicUrl;
+  if (error) {
+    // رسائل مفهومة
+    const msg = (error.message || '').toLowerCase();
+    if (msg.includes('row level security') || msg.includes('rls')) {
+      throw new Error('الرفع مرفوض بسبب RLS: أضف سياسات insert لباكِت Storage.');
+    }
+    if (msg.includes('payload too large') || msg.includes('413')) {
+      // محاولة ضغط أكثر ثم إعادة الرفع مرة ثانية
+      try {
+        const smaller = await compressImage(upFile, 1024, 1024, 0.8);
+        const retry = await sb.storage.from(BUCKET).upload(`menu/${crypto.randomUUID()}.jpg`, smaller, {
+          cacheControl: '3600', upsert: false, contentType: 'image/jpeg'
+        });
+        if (retry.error) throw retry.error;
+        const pub2 = sb.storage.from(BUCKET).getPublicUrl(retry.data.path);
+        return pub2.data.publicUrl;
+      } catch (e2) {
+        throw new Error('الملف كبير جدًا. جرّب صورة أصغر (≤ 2MB).');
+      }
+    }
+    throw new Error(error.message || 'تعذّر رفع الصورة');
+  }
+
+  const pub = sb.storage.from(BUCKET).getPublicUrl(data.path);
+  return pub.data.publicUrl;
 }
 
 /* =====================================================
@@ -761,7 +819,8 @@ function editItem(id){
       try{
         const pubUrl = await uploadImageToStorage(file);
         await finalize(pubUrl);
-      }catch(_){
+      }catch(err){
+        console.error(err);
         await finalize(url || it.img || '');
       }
     } else {
@@ -922,7 +981,8 @@ if (itemForm) {
         // NEW: ارفع إلى Storage بدلاً من Base64
         try{
           imgSrc = await uploadImageToStorage(file);
-        }catch(_){
+        }catch(err){
+          setText('#itemMsg', 'تعذّر رفع الصورة: ' + (err?.message || ''));
           imgSrc = urlField || defaultUrl;
         }
       } else {
