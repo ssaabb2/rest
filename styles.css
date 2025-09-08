@@ -1417,3 +1417,13 @@ pre, code{ max-width:100%; overflow:auto; }
 /* 12) مساعد تباعد عمودي سريع */
 .stack > * + *{ margin-top: var(--stack, 12px); }
 
+/* تكبير زر حذف الصنف داخل السلة */
+.cart-item button[aria-label="حذف"]{
+  font-size: 24px;            /* حجم علامة × */
+  line-height: 1;
+  width: 32px; 
+  height: 32px;               /* مساحة نقر أكبر */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
