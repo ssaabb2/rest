@@ -126,22 +126,18 @@
         <div class="rate-head">
           <div class="filters">
             <input id="q" class="input" placeholder="بحث باسم الصنف…" />
-            <div class="pill active" data-stars="all">الكل</div>
-            <div class="pill" data-stars="5">5★</div>
-            <div class="pill" data-stars="4">4★+</div>
-            <div class="pill" data-stars="3">3★+</div>
-            <div class="pill" data-stars="2">2★+</div>
-            <div class="pill" data-stars="1">1★+</div>
+            <div class="pill active" data-stars="all" title="نقرة: تصفية • نقرتان: إضافة تقييم">الكل</div>
+            <div class="pill" data-stars="5"  title="نقرتان: إضافة تقييم جديد 5★">5★</div>
+            <div class="pill" data-stars="4"  title="نقرتان: إضافة تقييم جديد 4★">4★+</div>
+            <div class="pill" data-stars="3"  title="نقرتان: إضافة تقييم جديد 3★">3★+</div>
+            <div class="pill" data-stars="2"  title="نقرتان: إضافة تقييم جديد 2★">2★+</div>
+            <div class="pill" data-stars="1"  title="نقرتان: إضافة تقييم جديد 1★">1★+</div>
           </div>
           <div class="filters">
             <button id="seedDemo" class="btn btn-ghost btn-sm btn-pill">عينات +</button>
-            <!-- زر عينات 5 نجوم -->
             <button id="seed5" class="btn btn-primary btn-sm btn-pill" title="إضافة عينات 5 نجوم">عينات 5★</button>
-            <!-- الأزرار الجديدة لعينات 4/3/2/1 نجوم -->
-            <button id="seed4" class="btn btn-ghost btn-sm btn-pill" title="إضافة عينات 4 نجوم">عينات 4★</button>
-            <button id="seed3" class="btn btn-ghost btn-sm btn-pill" title="إضافة عينات 3 نجوم">عينات 3★</button>
-            <button id="seed2" class="btn btn-ghost btn-sm btn-pill" title="إضافة عينات 2 نجوم">عينات 2★</button>
-            <button id="seed1" class="btn btn-ghost btn-sm btn-pill" title="إضافة عينات 1 نجمة">عينات 1★</button>
+            <!-- زر جديد لإضافة تقييم يدوي -->
+            <button id="addRating" class="btn btn-primary btn-sm btn-pill" title="إضافة تقييم يدوي">+ تقييم</button>
             <button id="exportCsv" class="btn btn-ghost btn-sm btn-pill">تصدير CSV</button>
             <button id="clearAll" class="btn btn-ghost btn-sm btn-pill">حذف الكل</button>
           </div>
@@ -224,6 +220,7 @@
     const LOCALE = 'ar-EG-u-nu-latn';
     const fmtNum = n => new Intl.NumberFormat(LOCALE).format(Number(n)||0);
     const toLocal = iso => { try{ return new Date(iso).toLocaleString(LOCALE) }catch(e){ return '-' } };
+    const nowISO = ()=> new Date().toISOString();
 
     const R = { q:'', stars:'all', page:1, size: Number(localStorage.getItem('rat_page_size')||10) };
 
@@ -233,7 +230,7 @@
     function starHtml(s){
       const n = Math.max(1, Math.min(5, Number(s)||1));
       let h = '<span class="stars-sm">';
-      for(let i=1;i<=5;i++) h += `<span class="s ${i<=n?'':'off'}"></span>`;
+      for(let i=1;i<=5;i++) h += \`<span class="s \${i<=n?'':'off'}"></span>\`;
       return h + '</span>';
     }
 
@@ -244,10 +241,7 @@
       const all = (LS.get('ratings',[])||[]).filter(r=> r.itemId===itemId);
       const count = all.length;
       const avg = count ? +(all.reduce((a,r)=> a + (Number(r.stars)||0), 0) / count).toFixed(2) : 0;
-      // تحديث صيغتين للانسجام مع باقي الصفحات
       it.rating = { avg, count };
-      it.rating_avg = avg;
-      it.rating_count = count;
       LS.set('menuItems', items);
     }
 
@@ -294,25 +288,89 @@
         body.innerHTML = pageRows.map((r,i)=>{
           const idx = start + i + 1;
           const safeId = JSON.stringify(r.id);
+          const byId = itemsById();
           const name = r.name || byId[r.itemId]?.name || '—';
-          return `<tr>
-            <td class="mono">${fmtNum(idx)}</td>
-            <td>${name}</td>
-            <td class="nowrap" title="${fmtNum(r.stars)}">${starHtml(r.stars)} <span class="small" style="margin-inline-start:6px">(${fmtNum(r.stars)})</span></td>
-            <td class="nowrap">${toLocal(r.time)}</td>
+          return \`<tr>
+            <td class="mono">\${fmtNum(idx)}</td>
+            <td>\${name}</td>
+            <td class="nowrap" title="\${fmtNum(r.stars)}">\${starHtml(r.stars)} <span class="small" style="margin-inline-start:6px">(\${fmtNum(r.stars)})</span></td>
+            <td class="nowrap">\${toLocal(r.time)}</td>
             <td class="col-ops">
               <div class="ops-inline">
-                <button class="btn btn-ghost btn-sm btn-pill" onclick='__rt.edit(${safeId})'>تعديل</button>
-                <button class="btn btn-danger btn-sm btn-pill" onclick='__rt.remove(${safeId})'>حذف</button>
+                <button class="btn btn-ghost btn-sm btn-pill" onclick='__rt.edit(\${safeId})'>تعديل</button>
+                <button class="btn btn-danger btn-sm btn-pill" onclick='__rt.remove(\${safeId})'>حذف</button>
               </div>
             </td>
-          </tr>`;
+          </tr>\`;
         }).join('');
       }
 
       document.getElementById('pageInfo').textContent = fmtNum(R.page) + ' / ' + fmtNum(pages);
       document.getElementById('prevPage').disabled = (R.page<=1);
       document.getElementById('nextPage').disabled = (R.page>=pages);
+    }
+
+    // ===== إضافة تقييم جديد (مودال يختار صنف + نجوم) =====
+    function openAddRating(preset=5){
+      const items = LS.get('menuItems',[])||[];
+      if(items.length===0){ window.Modal.info('لا يوجد أصناف لإضافة تقييم لها.'); return; }
+      const byId = itemsById();
+      const opts = items.map(it => \`<option value="\${it.id}">\${it.name}</option>\`).join('');
+
+      const html = \`
+        <div class="form">
+          <label class="app-label">الصنف</label>
+          <select id="newItem" class="input">\${opts}</select>
+
+          <label class="app-label">التقييم (1–5)</label>
+          <input id="newStars" class="input" type="number" min="1" max="5" value="\${Math.max(1,Math.min(5, Number(preset)||5))}" />
+        </div>
+      \`;
+      const save = document.createElement('button'); save.className='btn btn-primary btn-pill'; save.textContent='حفظ';
+      const cancel = document.createElement('button'); cancel.className='btn btn-ghost btn-pill'; cancel.textContent='إلغاء';
+
+      function addLocal(row, itemId, v){
+        const rs = LS.get('ratings',[])||[];
+        rs.unshift({
+          id: row?.id ?? crypto.randomUUID(),
+          itemId,
+          stars: row?.stars ?? v,
+          time: row?.created_at ?? nowISO(),
+          name: byId[itemId]?.name || ''
+        });
+        LS.set('ratings', rs);
+      }
+
+      save.onclick = async ()=>{
+        const itemId = document.getElementById('newItem')?.value;
+        const v = Math.max(1, Math.min(5, Number(document.getElementById('newStars').value)||5));
+        if(!itemId){ window.Modal.info('اختر الصنف أولاً.'); return; }
+
+        try{
+          if(window.supabaseBridge?.createRatingSB){
+            // الحفظ في Supabase ثم إضافة النتيجة محليًا (لتفادي ازدواجية المزامنة)
+            const row = await window.supabaseBridge.createRatingSB({ item_id: itemId, stars: v });
+            addLocal(row, itemId, v);
+          }else{
+            addLocal(null, itemId, v);
+          }
+          recalcItem(itemId);
+          try{ updateAll(); }catch(e){}
+          window.Modal.hide();
+          render();
+        }catch(e){
+          // فشل الحفظ في القاعدة → حفظ محليًا فقط
+          addLocal(null, itemId, v);
+          recalcItem(itemId);
+          try{ updateAll(); }catch(_){}
+          window.Modal.hide();
+          render();
+          window.Modal?.info?.('تعذّر حفظ التقييم في القاعدة، تم حفظه محليًا فقط.','تنبيه');
+        }
+      };
+      cancel.onclick = ()=> window.Modal.hide();
+      window.Modal.show('إضافة تقييم', html, [save, cancel]);
+      setTimeout(()=> document.getElementById('newStars')?.focus(), 50);
     }
 
     // عمليات عامة
@@ -340,18 +398,18 @@
         }
         const byId = itemsById();
         const opts = items.map(it =>
-          `<option value="${it.id}" ${it.id===r.itemId ? 'selected' : ''}>${it.name}</option>`
+          \`<option value="\${it.id}" \${it.id===r.itemId ? 'selected' : ''}>\${it.name}</option>\`
         ).join('');
 
-        const html = `
+        const html = \`
           <div class="form">
             <label class="app-label">الصنف</label>
-            <select id="edItem" class="input">${opts}</select>
+            <select id="edItem" class="input">\${opts}</select>
 
             <label class="app-label">التقييم (1–5)</label>
-            <input id="edStars" class="input" type="number" min="1" max="5" value="${Number(r.stars)||1}" />
+            <input id="edStars" class="input" type="number" min="1" max="5" value="\${Number(r.stars)||1}" />
           </div>
-        `;
+        \`;
         const save = document.createElement('button'); save.className='btn btn-primary btn-pill'; save.textContent='حفظ';
         const cancel = document.createElement('button'); cancel.className='btn btn-ghost btn-pill'; cancel.textContent='إلغاء';
 
@@ -388,7 +446,7 @@
       const lines = [head.join(',')];
       rows.forEach((r,i)=>{
         const name = (r.name || byId[r.itemId]?.name || '').replace(/"/g,'""');
-        lines.push([i+1, r.itemId, `"${name}"`, r.stars, r.time||''].join(','));
+        lines.push([i+1, r.itemId, \`"\${name}"\`, r.stars, r.time||''].join(','));
       });
       const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
       const a = document.createElement('a');
@@ -415,30 +473,21 @@
       render();
     }
 
-    // مولّد عينات بدرجة ثابتة (1..5)
-    function seedFixed(stars){
+    // عينات 5★ (كلها خمس نجوم)
+    function seedFive(){
       const items = LS.get('menuItems',[])||[];
       if(items.length===0){ window.Modal.info('لا يوجد أصناف لإضافة تقييمات لها.'); return; }
       const rs = LS.get('ratings',[])||[];
       const now = Date.now();
       const pick = items.slice(0, Math.min(6, items.length));
       pick.forEach((it,idx)=>{
-        rs.unshift({ id: crypto.randomUUID(), itemId: it.id, stars, time: new Date(now - idx*3600e3).toISOString(), name: it.name });
+        rs.unshift({ id: crypto.randomUUID(), itemId: it.id, stars: 5, time: new Date(now - idx*3600e3).toISOString(), name: it.name });
       });
       LS.set('ratings', rs);
       pick.forEach(it=> recalcItem(it.id));
       try{ updateAll(); }catch(e){}
       render();
     }
-
-    // عينات 5★ (كلها خمس نجوم)
-    function seedFive(){ seedFixed(5); }
-
-    // مختصرات 4/3/2/1 نجوم
-    const seedFour  = ()=> seedFixed(4);
-    const seedThree = ()=> seedFixed(3);
-    const seedTwo   = ()=> seedFixed(2);
-    const seedOne   = ()=> seedFixed(1);
 
     // أحداث الواجهة
     document.getElementById('q').addEventListener('input', (e)=>{ R.q = e.target.value; R.page = 1; render(); });
@@ -448,6 +497,11 @@
         R.stars = p.dataset.stars || 'all';
         R.page = 1; render();
       });
+      // نقرتين لفتح مودال إضافة تقييم جديد بحسب النجوم
+      p.addEventListener('dblclick', ()=>{
+        const st = p.dataset.stars;
+        if(st && st !== 'all'){ openAddRating(Number(st)); }
+      });
     });
     document.getElementById('prevPage').onclick = ()=>{ R.page--; render(); };
     document.getElementById('nextPage').onclick = ()=>{ R.page++; render(); };
@@ -456,21 +510,14 @@
     sizeSel.addEventListener('change', ()=>{ R.size = Number(sizeSel.value)||10; localStorage.setItem('rat_page_size', R.size); R.page=1; render(); });
     document.getElementById('exportCsv').onclick = exportCsv;
     document.getElementById('seedDemo').onclick = seedDemo;
-    document.getElementById('seed5').onclick = seedFive;
-    document.getElementById('seed4').onclick = seedFour;
-    document.getElementById('seed3').onclick = seedThree;
-    document.getElementById('seed2').onclick = seedTwo;
-    document.getElementById('seed1').onclick = seedOne;
+    document.getElementById('seed5').onclick = seedFive; // ← ربط زر عينات 5★
+    document.getElementById('addRating').onclick = ()=> openAddRating(5); // ← زر + تقييم
     document.getElementById('clearAll').onclick = async ()=>{
       const ok = await window.Modal.confirm('سيتم حذف كل التقييمات وإعادة حساب المتوسطات. هل أنت متأكد؟','تحذير');
       if(!ok) return;
       LS.set('ratings', []);
       const items = LS.get('menuItems',[])||[];
-      items.forEach(it=> {
-        it.rating = {avg:0,count:0};
-        it.rating_avg = 0;
-        it.rating_count = 0;
-      });
+      items.forEach(it=> it.rating = {avg:0,count:0});
       LS.set('menuItems', items);
       try{ updateAll(); }catch(e){}
       render();
