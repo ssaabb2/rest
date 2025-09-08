@@ -275,10 +275,19 @@ function advanceStatusInline(orderId) {
 async function deleteOrderInline(orderId) {
   const ok = await window.Modal.confirm('هل تريد حذف هذا الطلب؟ سيتم خصمه من إجمالي المبيعات.', 'تأكيد الحذف');
   if (!ok) return;
-  let orders = LS.get('orders', []);
-  orders = orders.filter((o) => o.id !== orderId);
-  LS.set('orders', orders);
-  updateAll();
+  try{
+    if (window.supabaseBridge?.deleteOrderSB) {
+      await window.supabaseBridge.deleteOrderSB(orderId);
+    } else {
+      let orders = LS.get('orders', []).filter(o => o.id !== orderId);
+      LS.set('orders', orders);
+    }
+    updateAll();
+  }catch(e){
+    console.error(e);
+    window.Modal.info('تعذّر حذف الطلب من القاعدة.', 'خطأ');
+  }
+
 }
 function updateOrderCounters() {
 const orders = LS.get('orders', []).filter(o => o.source !== 'demo');
