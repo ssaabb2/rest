@@ -44,55 +44,51 @@ export async function syncPublicCatalogToLocal(){
 }
 
 // ---------- Orders ----------
+// آمن: إنشاء الطلب + العناصر عبر RPC بصلاحية SECURITY DEFINER
 export async function createOrderSB({order_name, phone, table_no, notes, items}){
   const sb = window.supabase;
-  const total = (items||[]).reduce((s,it)=> s + (Number(it.price)||0) * Number(it.qty||1), 0);
 
-  const ins = await sb.from('orders')
-    .insert([{ order_name, phone, table_no, notes, total }])
-    .select()
-    .single();
-  if (ins.error) throw ins.error;
-  const order = ins.data;
-
-  const rows = (items||[]).map(it => ({
-    order_id: order.id,
-    item_id: it.id || null,
-    name: it.name,
-    price: Number(it.price)||0,
-    qty: Number(it.qty)||1
+  // توحيد/تنظيف عناصر السلة قبل إرسالها للـ RPC
+  const itemsNorm = (items||[]).map(it => ({
+    id:  it.id || null,
+    name: String(it.name || ''),
+    price: Number(it.price) || 0,
+    qty:  Number(it.qty  || 1)
   }));
-  if (rows.length){
-    const i2 = await sb.from('order_items').insert(rows);
-    if (i2.error) throw i2.error;
-  }
 
-  // cache to LS for UI  (إكمال النموذج ليستجيب الـKDS/لوحة الأدمن)
+  // استدعاء الدالة المعرفة في القاعدة: public.create_order_with_items
+  const { data: order_id, error } = await sb.rpc('create_order_with_items', {
+    _order_name: order_name || '',
+    _phone:      phone      || '',
+    _table_no:   table_no   || '',
+    _notes:      notes      || '',
+    _items:      itemsNorm
+  });
+  if (error) throw error;
+
+  // تحديث واجهة العميل محلياً (KDS/لوحة الأدمن) بدون انتظار قراءة من القاعدة
+  const total = itemsNorm.reduce((s,it)=> s + (it.price*it.qty), 0);
   const old = LS.get('orders', []);
-  const itemsLS = (items||[]).map(it => ({
-    id: it.id || null,
-    name: it.name || '',
-    price: Number(it.price)||0,
-    qty: Number(it.qty)||1
-  }));
-  const itemCount = itemsLS.reduce((s,it)=> s + (Number(it.qty)||1), 0);
-
+  const itemCount = itemsNorm.reduce((s,it)=> s + it.qty, 0);
   const nowISO = new Date().toISOString();
+
   old.unshift({
-    id: order.id,
+    id: order_id,
     total,
     itemCount,
     time: nowISO,           // مهم للفلاتر والمؤقّت
     createdAt: nowISO,      // مستخدم بالإشعارات
     status: 'new',          // يبدأ كجديد
-    items: itemsLS,         // عرض تفاصيل العناصر على البطاقة
+    items: itemsNorm.map(it => ({ id: it.id, name: it.name, price: it.price, qty: it.qty })),
     table: table_no || '',
     orderName: order_name || '',
     notes: notes || ''
   });
   LS.set('orders', old);
-  return order;
+
+  return { id: order_id };
 }
+
 // ---------- Orders: update & delete ----------
 export async function deleteOrderSB(orderId){
   const sb = window.supabase;
@@ -116,10 +112,10 @@ export async function updateOrderSB(orderId, { order_name, table_no, notes, tota
   const sb = window.supabase;
   const id = Number(orderId);
   const payload = {};
-if (typeof status       !== 'undefined') payload.status       = status;
-if (typeof additions    !== 'undefined') payload.additions    = additions;
-if (typeof discount_pct !== 'undefined') payload.discount_pct = Number(discount_pct)||0;
-if (typeof discount     !== 'undefined') payload.discount     = Number(discount)||0;
+  if (typeof status       !== 'undefined') payload.status       = status;
+  if (typeof additions    !== 'undefined') payload.additions    = additions;
+  if (typeof discount_pct !== 'undefined') payload.discount_pct = Number(discount_pct)||0;
+  if (typeof discount     !== 'undefined') payload.discount     = Number(discount)||0;
 
   const upd = await sb.from('orders').update(payload).eq('id', id).select().single();
   if (upd.error) throw upd.error;
@@ -128,10 +124,10 @@ if (typeof discount     !== 'undefined') payload.discount     = Number(discount)
   const orders = LS.get('orders', []);
   const o = orders.find(x => Number(x.id) === id);
   if (o){
-  if ('status'       in payload) o.status      = payload.status;
-if ('additions'    in payload) o.additions   = payload.additions;
-if ('discount'     in payload) o.discount    = payload.discount;
-if ('discount_pct' in payload) o.discountPct = payload.discount_pct;
+    if ('status'       in payload) o.status      = payload.status;
+    if ('additions'    in payload) o.additions   = payload.additions;
+    if ('discount'     in payload) o.discount    = payload.discount;
+    if ('discount_pct' in payload) o.discountPct = payload.discount_pct;
 
     LS.set('orders', orders);
   }
@@ -150,11 +146,10 @@ export async function createReservationSB({name, phone, iso, people, kind='table
   }]);
   if (insOnly.error) throw insOnly.error;
 
-  // نبني سجل محلي لواجهة المستخدم (بدون الاعتماد على إرجاع السيرفر)
+  // سجل محلي لواجهة المستخدم
   const r = {
     id: (crypto?.randomUUID?.() || `tmp-${Date.now()}`),
-    name,
-    phone,
+    name, phone,
     date: iso,
     people,
     kind,
@@ -208,7 +203,7 @@ export async function updateReservationSB(id, fields){
   }
 
   const sb = window.supabase;
-  // (مهم) مطابقة نوع id مع bigint في القاعدة
+  // مطابقة نوع id مع bigint في القاعدة
   const up = await sb.from('reservations').update(fields).eq('id', Number(id)).select().single();
   if (up.error) throw up.error;
 
@@ -231,7 +226,7 @@ export async function deleteReservationSB(id){
   }
 
   const sb = window.supabase;
-  // (مهم) مطابقة نوع id مع bigint في القاعدة
+  // مطابقة نوع id مع bigint في القاعدة
   const del = await sb.from('reservations').delete().eq('id', Number(id));
   if (del.error) throw del.error;
 
@@ -346,11 +341,12 @@ export async function deleteMenuItemSB(id){
 }
 
 // ---------- Ratings ----------
+// آمن لزائر مجهول: إدراج فقط بدون select
 export async function createRatingSB({item_id, stars}){
   const sb = window.supabase;
-  const ins = await sb.from('ratings').insert([{ item_id, stars }]).select().single();
+  const ins = await sb.from('ratings').insert([{ item_id, stars: Number(stars)||0 }]);
   if (ins.error) throw ins.error;
-  return ins.data;
+  return true;
 }
 
 // ---------- Admin sync ----------
@@ -364,7 +360,7 @@ export async function syncAdminDataToLocal(){
   if (items.error) throw items.error;
 
   // Orders joined with items
-const orders = await sb.from('orders').select('id,order_name,phone,table_no,notes,total,status,discount_pct,discount,additions,created_at').order('created_at', {ascending:false});
+  const orders = await sb.from('orders').select('id,order_name,phone,table_no,notes,total,status,discount_pct,discount,additions,created_at').order('created_at', {ascending:false});
   if (orders.error) throw orders.error;
 
   const orderIds = (orders.data||[]).map(o=>o.id);
@@ -399,22 +395,21 @@ const orders = await sb.from('orders').select('id,order_name,phone,table_no,note
       id: oi.item_id, name: oi.name, price: Number(oi.price)||0, qty: Number(oi.qty||1)
     }));
     const cnt = its.reduce((s,it)=> s + (Number(it.qty)||1), 0);
-   return {
-  id: o.id,
-  total: Number(o.total)||0,
-  itemCount: cnt,
-  time: o.created_at,
-  createdAt: o.created_at,
-  status: o.status || 'new',
-  table: o.table_no||'',
-  orderName: o.order_name||'',
-  notes: o.notes||'',
-  additions: o.additions || [],
-  discount: Number(o.discount)||0,
-  discountPct: Number(o.discount_pct)||0,
-  items: its
-};
-
+    return {
+      id: o.id,
+      total: Number(o.total)||0,
+      itemCount: cnt,
+      time: o.created_at,
+      createdAt: o.created_at,
+      status: o.status || 'new',
+      table: o.table_no||'',
+      orderName: o.order_name||'',
+      notes: o.notes||'',
+      additions: o.additions || [],
+      discount: Number(o.discount)||0,
+      discountPct: Number(o.discount_pct)||0,
+      items: its
+    };
   });
   LS.set('orders', adminOrders);
 
