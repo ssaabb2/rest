@@ -505,11 +505,15 @@ function filteredItems(){
                            (state.search==='' || i.name.includes(state.search) || i.desc?.includes(state.search)));
 }
 
-/* ===== Rating helpers ===== */
-function userHasOrderedItem(itemId){
+/* ===== Rating helpers ===== */function userHasOrderedItem(itemId){
   const orders = LS.get('orders', []);
-  return orders.some(o => Array.isArray(o.items) && o.items.some(it => it.itemId === itemId));
+  const target = String(itemId);
+  return orders.some(o =>
+    Array.isArray(o.items) &&
+    o.items.some(it => String(it.itemId ?? it.id ?? '') === target)
+  );
 }
+
 function userHasRatedItem(itemId){
   const rated = LS.get('userRated', {});
   return !!rated[itemId];
@@ -924,8 +928,7 @@ try{
 
 /* =====================================================
    Rating
-===================================================== */
-function rateItem(id, stars){
+===================================================== */async function rateItem(id, stars){
   if(!userHasOrderedItem(id)){
     Modal.info('لا يمكنك التقييم إلا بعد طلب هذا الصنف على هذا الجهاز.','غير مسموح');
     return;
@@ -936,24 +939,47 @@ function rateItem(id, stars){
   }
 
   const items = LS.get('menuItems', []);
-  const it = items.find(x=>x.id===id); if(!it) return;
+  const it = items.find(x => String(x.id) === String(id)); 
+  if(!it) return;
 
-  const rating = it.rating || {avg:0, count:0};
+  // تحديث متوسط التقييم محليًا (تفاؤلي)
+  const rating = it.rating || { avg:0, count:0 };
   const totalScore = rating.avg * rating.count + stars;
   rating.count += 1;
   rating.avg = +(totalScore / rating.count).toFixed(2);
-  it.rating = rating; LS.set('menuItems', items);
+  it.rating = rating;
+  LS.set('menuItems', items);
 
+  // سجل التقييمات المحلي
   const rs = LS.get('ratings', []);
-  rs.unshift({id:crypto.randomUUID(), itemId:id, stars, time:nowISO(), name:it.name});
+  rs.unshift({ id:(crypto?.randomUUID?.()||String(Date.now())), itemId:id, stars, time:nowISO(), name:it.name });
   LS.set('ratings', rs);
 
+  // قفل التقييم لهذا الجهاز (مرّة واحدة)
+  const rated = LS.get('userRated', {}) || {};
+  rated[String(id)] = true;
+  LS.set('userRated', rated);
+
+  // إشعار محلي
   const notifs = LS.get('notifications', []);
-  notifs.unshift({ id: crypto.randomUUID(), type:'rating', title:`تقييم جديد (${stars}★)`, message:`${it.name}`, time: nowISO(), read:false });
+  notifs.unshift({ 
+    id:(crypto?.randomUUID?.()||String(Date.now())), 
+    type:'rating',
+    title:`تقييم جديد (${stars}★)`,
+    message: it.name, 
+    time: nowISO(), 
+    read:false 
+  });
   LS.set('notifications', notifs);
 
+  // حفظ في Supabase (تجاهُل الخطأ إن وُجد)
+  try { await window.supabaseBridge?.createRatingSB?.({ item_id:id, stars }); } 
+  catch(e){ console.warn('persist rating failed', e); }
+
   renderItems();
+  Modal.info('شكراً لتقييمك!','تم');
 }
+
 
 /* =====================================================
    Front Sidebar
@@ -1164,3 +1190,27 @@ function setupHours(){
     }, true);
   });
 })();
+// نقر النجوم للتقييم على الصفحة الرئيسية
+document.addEventListener('click', (e)=>{
+  const starEl = e.target.closest('.stars .star');
+  if(!starEl) return;
+
+  const wrap = starEl.closest('.stars');
+  const id = wrap?.dataset?.id;
+  if(!id) return;
+
+  if(userHasRatedItem(id)){
+    Modal.info('لقد قُمت بتقييم هذا الصنف مسبقاً.','تم التقييم');
+    return;
+  }
+  if(!userHasOrderedItem(id)){
+    Modal.info('لا يمكنك التقييم إلا بعد طلب هذا الصنف على هذا الجهاز.','غير مسموح');
+    return;
+  }
+
+  const all = Array.from(wrap.querySelectorAll('.star')); // ترتيبها DOM = [5,4,3,2,1]
+  const idx = all.indexOf(starEl);                        // 0→5 نجوم، 4→نجمة واحدة
+  const stars = Math.max(1, 5 - idx);
+
+  rateItem(id, stars);
+});
