@@ -110,14 +110,14 @@ export async function deleteOrderSB(orderId){
   return true;
 }
 
-export async function updateOrderSB(orderId, { order_name, table_no, notes, total }){
+export async function updateOrderSB(orderId, { order_name, table_no, notes, total, status, additions, discount_pct, discount }){
   const sb = window.supabase;
   const id = Number(orderId);
   const payload = {};
-  if (typeof order_name !== 'undefined') payload.order_name = order_name;
-  if (typeof table_no   !== 'undefined') payload.table_no   = table_no;
-  if (typeof notes      !== 'undefined') payload.notes      = notes;
-  if (typeof total      !== 'undefined') payload.total      = Number(total);
+if (typeof status       !== 'undefined') payload.status       = status;
+if (typeof additions    !== 'undefined') payload.additions    = additions;
+if (typeof discount_pct !== 'undefined') payload.discount_pct = Number(discount_pct)||0;
+if (typeof discount     !== 'undefined') payload.discount     = Number(discount)||0;
 
   const upd = await sb.from('orders').update(payload).eq('id', id).select().single();
   if (upd.error) throw upd.error;
@@ -126,10 +126,11 @@ export async function updateOrderSB(orderId, { order_name, table_no, notes, tota
   const orders = LS.get('orders', []);
   const o = orders.find(x => Number(x.id) === id);
   if (o){
-    if ('order_name' in payload) o.orderName = payload.order_name;
-    if ('table_no'   in payload) o.table     = payload.table_no;
-    if ('notes'      in payload) o.notes     = payload.notes;
-    if ('total'      in payload) o.total     = payload.total;
+  if ('status'       in payload) o.status      = payload.status;
+if ('additions'    in payload) o.additions   = payload.additions;
+if ('discount'     in payload) o.discount    = payload.discount;
+if ('discount_pct' in payload) o.discountPct = payload.discount_pct;
+
     LS.set('orders', orders);
   }
   try { document.dispatchEvent(new CustomEvent('sb:admin-synced', { detail: { at: Date.now() } })); } catch {}
@@ -361,7 +362,7 @@ export async function syncAdminDataToLocal(){
   if (items.error) throw items.error;
 
   // Orders joined with items
-  const orders = await sb.from('orders').select('id,order_name,phone,table_no,notes,total,created_at').order('created_at', {ascending:false});
+const orders = await sb.from('orders').select('id,order_name,phone,table_no,notes,total,status,discount_pct,discount,additions,created_at').order('created_at', {ascending:false});
   if (orders.error) throw orders.error;
 
   const orderIds = (orders.data||[]).map(o=>o.id);
@@ -396,18 +397,22 @@ export async function syncAdminDataToLocal(){
       id: oi.item_id, name: oi.name, price: Number(oi.price)||0, qty: Number(oi.qty||1)
     }));
     const cnt = its.reduce((s,it)=> s + (Number(it.qty)||1), 0);
-    return {
-      id: o.id,
-      total: Number(o.total)||0,
-      itemCount: cnt,
-      time: o.created_at,          // NEW
-      createdAt: o.created_at,
-      status: 'new',               // NEW
-      table: o.table_no||'',
-      orderName: o.order_name||'',
-      notes: o.notes||'',
-      items: its
-    };
+   return {
+  id: o.id,
+  total: Number(o.total)||0,
+  itemCount: cnt,
+  time: o.created_at,
+  createdAt: o.created_at,
+  status: o.status || 'new',
+  table: o.table_no||'',
+  orderName: o.order_name||'',
+  notes: o.notes||'',
+  additions: o.additions || [],
+  discount: Number(o.discount)||0,
+  discountPct: Number(o.discount_pct)||0,
+  items: its
+};
+
   });
   LS.set('orders', adminOrders);
 
