@@ -898,7 +898,7 @@ try{
   // تنظيف السلة وعرض نجاح (ابقِ منطقك كما هو) — [FIX] عرض مرّة واحدة
   if(!__orderSuccessShown){
     LS.set('cart', []); updateCartCount(); renderCart(); closeCart();
-    Modal.info('تم إرسال الطلب بنجاح! ستصلك رسالة تأكيد قريباً.','نجاح');
+    Modal.info('تم إرسال الطلب بنجاح!    .','نجاح');
     __orderSuccessShown = true;
   }
 }catch(e){
@@ -915,7 +915,7 @@ try{
     // [FIX] امنع التكرار مرة ثانية
     if(!__orderSuccessShown){
       LS.set('cart', []); updateCartCount(); renderCart(); closeCart();
-      Modal.info('تم إرسال الطلب بنجاح! ستصلك رسالة تأكيد قريباً.','نجاح');
+      Modal.info('تم إرسال الطلب بنجاح!    .','نجاح');
       __orderSuccessShown = true;
     }
 
@@ -933,10 +933,7 @@ try{
     Modal.info('لا يمكنك التقييم إلا بعد طلب هذا الصنف على هذا الجهاز.','غير مسموح');
     return;
   }
-  if(userHasRatedItem(id)){
-    Modal.info('لقد قُمت بتقييم هذا الصنف مسبقاً.','تم التقييم');
-    return;
-  }
+
 
   const items = LS.get('menuItems', []);
   const it = items.find(x => String(x.id) === String(id)); 
