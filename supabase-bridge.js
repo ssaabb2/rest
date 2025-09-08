@@ -91,6 +91,50 @@ export async function createOrderSB({order_name, phone, table_no, notes, items})
   LS.set('orders', old);
   return order;
 }
+// ---------- Orders: update & delete ----------
+export async function deleteOrderSB(orderId){
+  const sb = window.supabase;
+  const id = Number(orderId);
+  const del = await sb.from('orders').delete().eq('id', id);
+  if (del.error) throw del.error;
+
+  // عكس التغيير في التخزين المحلي
+  const orders = LS.get('orders', []);
+  LS.set('orders', orders.filter(o => Number(o.id) !== id));
+
+  // تنظيف إشعارات الطلب إن وُجدت
+  const ns = LS.get('notifications', []).filter(n => n.type!=='order' || !String(n.title||'').includes(`#${id}`));
+  LS.set('notifications', ns);
+
+  try { document.dispatchEvent(new CustomEvent('sb:admin-synced', { detail: { at: Date.now() } })); } catch {}
+  return true;
+}
+
+export async function updateOrderSB(orderId, { order_name, table_no, notes, total }){
+  const sb = window.supabase;
+  const id = Number(orderId);
+  const payload = {};
+  if (typeof order_name !== 'undefined') payload.order_name = order_name;
+  if (typeof table_no   !== 'undefined') payload.table_no   = table_no;
+  if (typeof notes      !== 'undefined') payload.notes      = notes;
+  if (typeof total      !== 'undefined') payload.total      = Number(total);
+
+  const upd = await sb.from('orders').update(payload).eq('id', id).select().single();
+  if (upd.error) throw upd.error;
+
+  // تحديث الكاش المحلي
+  const orders = LS.get('orders', []);
+  const o = orders.find(x => Number(x.id) === id);
+  if (o){
+    if ('order_name' in payload) o.orderName = payload.order_name;
+    if ('table_no'   in payload) o.table     = payload.table_no;
+    if ('notes'      in payload) o.notes     = payload.notes;
+    if ('total'      in payload) o.total     = payload.total;
+    LS.set('orders', orders);
+  }
+  try { document.dispatchEvent(new CustomEvent('sb:admin-synced', { detail: { at: Date.now() } })); } catch {}
+  return upd.data;
+}
 
 // ---------- Reservations ----------
 export async function createReservationSB({name, phone, iso, people, kind='table', table='', notes, duration_minutes=90}){
@@ -432,6 +476,8 @@ export async function requireAdminOrRedirect(loginPath='login.html'){
 window.supabaseBridge = {
   syncPublicCatalogToLocal,
   createOrderSB,
+  deleteOrderSB,
+  updateOrderSB,
   createCategorySB,
   updateCategorySB,
   deleteCategorySB,
