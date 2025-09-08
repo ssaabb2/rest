@@ -255,16 +255,25 @@
       LS.set('notifications', ns);
       try{ updateNotifCount(); renderNotifs(); }catch(e){}
     }
+async function setStatus(id, st){
+  const orders = LS.get('orders', []);
+  const o = orders.find(x=>x.id===id); if(!o) return;
+  o.status = st;
+  LS.set('orders', orders);
+  renderKDS();
+  updateCounts();
+  try{ updateAll(); }catch(e){}
 
-    function setStatus(id, st){
-      const orders = LS.get('orders', []);
-      const o = orders.find(x=>x.id===id); if(!o) return;
-      o.status = st;
-      LS.set('orders', orders);
-      renderKDS();
-      updateCounts();
-      try{ updateAll(); }catch(e){} // refresh KPIs في admin.js
+  try{
+    if (window.supabaseBridge?.updateOrderSB) {
+      await window.supabaseBridge.updateOrderSB(id, { status: st });
     }
+  }catch(e){
+    console.error(e);
+    Modal.info('تم التحديث محلياً فقط. لم يُحدَّث في القاعدة.', 'تنبيه');
+  }
+}
+
 
     // Actions (محلية للحالات فقط)
     window.advanceStatus = function(id){
@@ -415,10 +424,14 @@
         try{
           if (window.supabaseBridge?.updateOrderSB) {
             save.disabled = true; save.setAttribute('aria-busy','true');
-            await window.supabaseBridge.updateOrderSB(id, {
-              notes: o.notes,
-              total: o.total
-            });
+           await window.supabaseBridge.updateOrderSB(id, {
+  notes: o.notes,
+  total: o.total,
+  additions: o.additions || [],
+  discount_pct: o.discountPct || 0,
+  discount: o.discount || 0
+});
+
           }
         }catch(e){
           console.error(e);
