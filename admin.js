@@ -42,27 +42,6 @@ const setHTML = (sel, html) => {
   if (el) el.innerHTML = html ?? '';
 };
 
-/* =====================================================
-   NEW: رفع صورة إلى Supabase Storage وإرجاع الرابط العام
-   - ضع اسم الباكِت: menu-images (عام Public)
-===================================================== */
-async function uploadImageToStorage(file){
-  const sb = window.supabase;
-  if (!sb || !file) throw new Error('Missing supabase client or file');
-
-  const ext = (file.name?.split('.').pop() || 'jpg').toLowerCase();
-  const path = `menu/${crypto.randomUUID()}.${ext}`;
-
-  const up = await sb.storage.from('menu-images').upload(path, file, {
-    cacheControl: '3600',
-    upsert: false,
-    contentType: file.type || 'image/jpeg'
-  });
-  if (up.error) throw up.error;
-
-  const { data } = sb.storage.from('menu-images').getPublicUrl(up.data.path);
-  return data.publicUrl;
-}
 
 /* =====================================================
    Modal system (بديل احترافي عن السناك بار/التوست)
@@ -121,7 +100,7 @@ function ensureModalHost(){
   document.body.appendChild(overlay);
   overlay.addEventListener('click', (e)=>{ if(e.target === overlay) hideModal(); });
   on('#modalCloseBtn','click', hideModal);
-  document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') hideModal(); });
+  document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') hideModal(); });
   return overlay;
 }
 function showModal({title, bodyHTML, actions=[]}){
@@ -170,7 +149,7 @@ const notifDrawer = q('#notifDrawer');
 const closeNotif = q('#closeNotif');
 
 if (notifBtn && notifDrawer) {
-  notifBtn.addEventListener('click', () => { try{ renderNotifs(); }catch(e){}; notifDrawer.classList.add('open'); });
+notifBtn.addEventListener('click', () => { try{ renderNotifs(); }catch(e){}; notifDrawer.classList.add('open'); });
 }
 if (closeNotif && notifDrawer) {
   closeNotif.addEventListener('click', () => notifDrawer.classList.remove('open'));
@@ -189,8 +168,9 @@ on('#markAllRead', 'click', () => {
 /* NEW: استمع لتغييرات الحجوزات أيضًا */
 window.addEventListener('storage', (e) => {
   if (!e || !e.key || ['notifications','orders','menuItems','ratings','categories','reservations'].includes(e.key)) {
-    updateAll();
-  }
+  updateAll();
+}
+
 });
 
 /* =====================================================
@@ -310,7 +290,7 @@ async function deleteOrderInline(orderId) {
 
 }
 function updateOrderCounters() {
-  const orders = LS.get('orders', []).filter(o => o.source !== 'demo');
+const orders = LS.get('orders', []).filter(o => o.source !== 'demo');
   const counts = {
     all: orders.length,
     new: orders.filter((o) => o.status === 'new').length,
@@ -710,7 +690,7 @@ function editItem(id){
     }
   }
 
-  async function submit(){
+  function submit(){
     const name = q('#ei_name').value.trim();
     const price = Number(q('#ei_price').value);
     const desc = q('#ei_desc').value.trim();
@@ -756,16 +736,13 @@ function editItem(id){
       }
     }
 
-    // NEW: ارفع إلى Storage بدلاً من Base64
     if (file){
-      try{
-        const pubUrl = await uploadImageToStorage(file);
-        await finalize(pubUrl);
-      }catch(_){
-        await finalize(url || it.img || '');
-      }
+      const reader = new FileReader();
+      reader.onload = ()=> finalize(reader.result);
+      reader.onerror = ()=> finalize(url || it.img || '');
+      reader.readAsDataURL(file);
     } else {
-      await finalize(url || it.img || '');
+      finalize(url || it.img || '');
     }
   }
 
@@ -919,12 +896,12 @@ if (itemForm) {
       const defaultUrl = 'https://images.unsplash.com/photo-1543352634-8730b1c3c34b?q=80&w=1200&auto=format&fit=crop';
       let imgSrc;
       if (file) {
-        // NEW: ارفع إلى Storage بدلاً من Base64
-        try{
-          imgSrc = await uploadImageToStorage(file);
-        }catch(_){
-          imgSrc = urlField || defaultUrl;
-        }
+        imgSrc = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => resolve(urlField || defaultUrl);
+          reader.readAsDataURL(file);
+        });
       } else {
         imgSrc = urlField || defaultUrl;
       }
