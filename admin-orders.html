@@ -95,7 +95,7 @@
             <button data-st="canceled" class="kds-tab"><span class="dot dot-canceled"></span><span>الإلغائات</span><span id="cnt-canceled" class="badge badge-muted small">0</span></button>
           </div>
           <div class="kds-actions">
-            <button id="demoOrder" class="btn btn-ghost">طلب تجريبي +</button>
+            <button id="demoOrder" class="btn btn-ghost">انشاء طلب  +</button>
             <button id="groupBtn" class="btn btn-ghost">تجميع الأصناف</button>
             <div class="kds-search">
               <input id="searchOrders" class="input" placeholder="بحث: رقم/اسم/طاولة/صنف" />
@@ -647,7 +647,7 @@ async function setStatus(id, st){
         </form>
       `;
 
-      const ok = document.createElement('button'); ok.className='btn btn-primary'; ok.textContent='إنشاء طلب تجريبي';
+      const ok = document.createElement('button'); ok.className='btn btn-primary'; ok.textContent='إنشاء طلب ';
       const cancel = document.createElement('button'); cancel.className='btn btn-ghost'; cancel.textContent='إلغاء'; 
       const releaseDemoBtn = ()=>{ demoBtn.disabled = false; demoBtn.removeAttribute('aria-busy'); };
 
@@ -733,7 +733,7 @@ async function setStatus(id, st){
         }
       };
 
-      Modal.show('إنشاء طلب تجريبي من أصنافك', html, [ok, cancel]);
+      Modal.show('إنشاء طلب  من أصنافك', html, [ok, cancel]);
 
       // بحث فوري داخل قائمة الأصناف
       const q = document.getElementById('demoSearch');
