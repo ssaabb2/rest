@@ -82,13 +82,9 @@
       background:#fff; color:#6b7280; font-weight:800; font-size:.95rem;
       padding:14px 12px; border-bottom:1px solid #eef2f7; text-align:right;
     }
- .table-soft tbody td{
-  padding:14px 12px;
-  border-bottom:2px solid #e2e8f0; /* كان 1px #eef2f7 */
-}
-.table-soft thead th{
-  border-bottom:2px solid #cbd5e1; /* خط عنوان الجدول أوضح */
-}
+    .table-soft tbody td{
+      padding:14px 12px; border-bottom:1px solid #eef2f7; vertical-align:middle;
+    }
     .table-soft .col-ops{ width:1%; white-space:nowrap; }
 
     /* أزرار العمليات كبسولات */
@@ -757,9 +753,9 @@
               .receipt{ border:2px dashed #e5e7eb; border-radius:16px; padding:18px; }
               .tag{ text-align:right; font-size:22px; font-weight:900; margin:0 0 4px; }
               .brand{ text-align:center; font-size:22px; font-weight:900; margin:6px 0 14px; }
-              .pairs{ display:grid; grid-template-columns: 1fr max-content; column-gap:22px; row-gap:10px; align-items:baseline; }
-              .value{ font-weight:900; font-size:20px; }
-              .label{ color:#6b7280; font-size:18px; }
+.pairs{ display:grid; grid-template-columns: max-content 1fr; column-gap:10px; row-gap:10px; align-items:baseline; justify-items:start; }
+.value{ text-align:right; font-weight:900; font-size:20px; }
+.label{ text-align:right; font-size:18px; color:#6b7280; }
               .notes{ margin-top:14px; }
               .notes-label{ color:#6b7280; margin-bottom:6px; }
               .notes-value{ font-size:18px; }
@@ -956,4 +952,3 @@
   </script>
 </body>
 </html>
-
