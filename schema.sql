@@ -115,8 +115,8 @@ create table if not exists public.admins(
 -- Seed initial admin (idempotent) — قبل تفعيل RLS
 do $$
 begin
-  if not exists (select 1 from public.admins where user_id = '4d3a1e2e-6ae0-4abc-b514-a2a8706cbdd0'::uuid) then
-    insert into public.admins (user_id) values ('4d3a1e2e-6ae0-4abc-b514-a2a8706cbdd0'::uuid);
+  if not exists (select 1 from public.admins where user_id = '484f9433-bbcd-4fa2-8a8e-5a71b463f7cd'::uuid) then
+    insert into public.admins (user_id) values ('484f9433-bbcd-4fa2-8a8e-5a71b463f7cd'::uuid);
   end if;
 end$$;
 
