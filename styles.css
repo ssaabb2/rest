@@ -867,6 +867,9 @@ body.cart-open .navbar, body.cart-open .cats-bar{ opacity:.0; pointer-events:non
   stroke-width: 1.2;
   vector-effect: non-scaling-stroke;
 }
+/* قفل النجوم بعد التقييم */
+.stars.is-rated{ pointer-events: none; opacity: .85; }
+.stars.is-rated .star{ filter: grayscale(0.1); }
 
 /* شارة متوسط التقييم (لو ما أضفتها سابقًا) */
 .avg-badge{

@@ -1,4 +1,4 @@
-// ============= supabase-bridge.js (SAFE PACK, FIXED ADMIN CHECK) =============
+// ============= supabase-bridge.js (SAFE PACK) =============
 // Requires: a Supabase client at window.supabase (create it in <head>).
 
 (() => {
@@ -48,6 +48,7 @@ export async function syncPublicCatalogToLocal(){
 export async function createOrderSB({order_name, phone, table_no, notes, items}){
   const sb = window.supabase;
 
+  // توحيد/تنظيف عناصر السلة قبل إرسالها للـ RPC
   const itemsNorm = (items||[]).map(it => ({
     id:  it.id || null,
     name: String(it.name || ''),
@@ -55,6 +56,7 @@ export async function createOrderSB({order_name, phone, table_no, notes, items})
     qty:  Number(it.qty  || 1)
   }));
 
+  // استدعاء الدالة المعرفة في القاعدة: public.create_order_with_items
   const { data: order_id, error } = await sb.rpc('create_order_with_items', {
     _order_name: order_name || '',
     _phone:      phone      || '',
@@ -64,7 +66,7 @@ export async function createOrderSB({order_name, phone, table_no, notes, items})
   });
   if (error) throw error;
 
-  // تحديث واجهة العميل محلياً
+  // تحديث واجهة العميل محلياً (KDS/لوحة الأدمن) بدون انتظار قراءة من القاعدة
   const total = itemsNorm.reduce((s,it)=> s + (it.price*it.qty), 0);
   const old = LS.get('orders', []);
   const itemCount = itemsNorm.reduce((s,it)=> s + it.qty, 0);
@@ -74,9 +76,9 @@ export async function createOrderSB({order_name, phone, table_no, notes, items})
     id: order_id,
     total,
     itemCount,
-    time: nowISO,
-    createdAt: nowISO,
-    status: 'new',
+    time: nowISO,           // مهم للفلاتر والمؤقّت
+    createdAt: nowISO,      // مستخدم بالإشعارات
+    status: 'new',          // يبدأ كجديد
     items: itemsNorm.map(it => ({ id: it.id, name: it.name, price: it.price, qty: it.qty })),
     table: table_no || '',
     orderName: order_name || '',
@@ -94,9 +96,11 @@ export async function deleteOrderSB(orderId){
   const del = await sb.from('orders').delete().eq('id', id);
   if (del.error) throw del.error;
 
+  // عكس التغيير في التخزين المحلي
   const orders = LS.get('orders', []);
   LS.set('orders', orders.filter(o => Number(o.id) !== id));
 
+  // تنظيف إشعارات الطلب إن وُجدت
   const ns = LS.get('notifications', []).filter(n => n.type!=='order' || !String(n.title||'').includes(`#${id}`));
   LS.set('notifications', ns);
 
@@ -116,6 +120,7 @@ export async function updateOrderSB(orderId, { order_name, table_no, notes, tota
   const upd = await sb.from('orders').update(payload).eq('id', id).select().single();
   if (upd.error) throw upd.error;
 
+  // تحديث الكاش المحلي
   const orders = LS.get('orders', []);
   const o = orders.find(x => Number(x.id) === id);
   if (o){
@@ -123,6 +128,7 @@ export async function updateOrderSB(orderId, { order_name, table_no, notes, tota
     if ('additions'    in payload) o.additions   = payload.additions;
     if ('discount'     in payload) o.discount    = payload.discount;
     if ('discount_pct' in payload) o.discountPct = payload.discount_pct;
+
     LS.set('orders', orders);
   }
   try { document.dispatchEvent(new CustomEvent('sb:admin-synced', { detail: { at: Date.now() } })); } catch {}
@@ -133,13 +139,14 @@ export async function updateOrderSB(orderId, { order_name, table_no, notes, tota
 export async function createReservationSB({name, phone, iso, people, kind='table', table='', notes, duration_minutes=90}){
   const sb = window.supabase;
 
+  // إدراج بدون select لتوافق صلاحيات anon (insert فقط)
   const insOnly = await sb.from('reservations').insert([{
     name, phone, date: iso, people, kind, notes,
     duration_minutes, table_no: table
   }]);
   if (insOnly.error) throw insOnly.error;
 
-  // سجل محلي
+  // سجل محلي لواجهة المستخدم
   const r = {
     id: (crypto?.randomUUID?.() || `tmp-${Date.now()}`),
     name, phone,
@@ -185,6 +192,7 @@ export async function updateReservationSB(id, fields){
 
   const isTmp = String(id).startsWith('tmp-') || Number.isNaN(Number(id));
   if (isTmp) {
+    // تعديل محلي فقط للحجوزات ذات المعرّف المؤقّت
     const list = LS.get('reservations', []);
     const i = list.findIndex(r => String(r.id) === String(id));
     if (i >= 0) {
@@ -195,6 +203,7 @@ export async function updateReservationSB(id, fields){
   }
 
   const sb = window.supabase;
+  // مطابقة نوع id مع bigint في القاعدة
   const up = await sb.from('reservations').update(fields).eq('id', Number(id)).select().single();
   if (up.error) throw up.error;
 
@@ -210,12 +219,14 @@ export async function updateReservationSB(id, fields){
 export async function deleteReservationSB(id){
   const isTmp = String(id).startsWith('tmp-') || Number.isNaN(Number(id));
   if (isTmp){
+    // حذف محلي فقط للحجوزات ذات المعرّف المؤقّت
     const list = (LS.get('reservations', []) || []).filter(r => String(r.id) !== String(id));
     LS.set('reservations', list);
     return true;
   }
 
   const sb = window.supabase;
+  // مطابقة نوع id مع bigint في القاعدة
   const del = await sb.from('reservations').delete().eq('id', Number(id));
   if (del.error) throw del.error;
 
@@ -229,7 +240,7 @@ export async function createCategorySB({ id, name, sort = 100 }){
   const sb = window.supabase;
   const ins = await sb.from('categories').insert([{ id, name, sort }]).select().single();
   if (ins.error) throw ins.error;
-
+  // تحديث الكاش المحلي مباشرة لظهور القسم فورًا
   const cats = LS.get('categories', []);
   cats.push({ id: ins.data.id, name: ins.data.name, sort: ins.data.sort });
   LS.set('categories', cats);
@@ -245,6 +256,7 @@ export async function updateCategorySB(id, fields = {}){
   const up = await sb.from('categories').update(payload).eq('id', id).select().single();
   if (up.error) throw up.error;
 
+  // Update LS cache for immediate UI feedback
   const cats = LS.get('categories', []);
   const i = cats.findIndex(c => c.id === id);
   if (i >= 0) {
@@ -259,6 +271,7 @@ export async function deleteCategorySB(id){
   const del = await sb.from('categories').delete().eq('id', id);
   if (del.error) throw del.error;
 
+  // Reflect locally: remove cat + unlink items
   const cats = LS.get('categories', []).filter(c => c.id !== id);
   LS.set('categories', cats);
   const items = LS.get('menuItems', []);
@@ -275,6 +288,7 @@ export async function createMenuItemSB({ name, desc='', price=0, img='', cat_id=
   }]).select().single();
   if (ins.error) throw ins.error;
 
+  // حدّث الكاش المحلي لظهور الصنف فورًا
   const items = LS.get('menuItems', []);
   const it = ins.data;
   items.unshift({
@@ -301,6 +315,7 @@ export async function updateMenuItemSB(id, fields={}){
   const up = await sb.from('menu_items').update(payload).eq('id', id).select().single();
   if (up.error) throw up.error;
 
+  // حدّث الكاش المحلي
   const items = LS.get('menuItems', []);
   const i = items.findIndex(x => x.id === id);
   if (i >= 0){
@@ -334,27 +349,108 @@ export async function createRatingSB({item_id, stars}){
   return true;
 }
 
-// ---------- ADMIN AUTH HELPERS ----------
-export async function isAdminSB(){
+// ---------- Admin sync ----------
+export async function syncAdminDataToLocal(){
   const sb = window.supabase;
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) return { isAuthed:false, isAdmin:false, session:null };
-  const uid = session.user.id;
-  const { data, error } = await sb.from('admins').select('user_id').eq('user_id', uid).maybeSingle();
-  return { isAuthed:true, isAdmin: !!data && !error, session };
+
+  const cats = await sb.from('categories').select('*').order('sort', {ascending:true});
+  if (cats.error) throw cats.error;
+
+  const items = await sb.from('menu_items').select('*').order('created_at', {ascending:false});
+  if (items.error) throw items.error;
+
+  // Orders joined with items
+  const orders = await sb.from('orders').select('id,order_name,phone,table_no,notes,total,status,discount_pct,discount,additions,created_at').order('created_at', {ascending:false});
+  if (orders.error) throw orders.error;
+
+  const orderIds = (orders.data||[]).map(o=>o.id);
+  let orderItems = [];
+  if (orderIds.length){
+    const oi = await sb.from('order_items').select('*').in('order_id', orderIds);
+    if (oi.error) throw oi.error;
+    orderItems = oi.data || [];
+  }
+
+  // ratings
+  const ratings = await sb.from('ratings').select('*').order('created_at', {ascending:false});
+  if (ratings.error) throw ratings.error;
+
+  const reservations = await sb.from('reservations').select('*').order('date', {ascending:true});
+  if (reservations.error) throw reservations.error;
+
+  // adapt to your LS shapes
+  LS.set('categories', cats.data || []);
+  LS.set('menuItems', (items.data||[]).map(it => ([
+    it.id, it.name, it["desc"], it.price, it.img, it.cat_id, it.fresh, it.rating_avg, it.rating_count, it.available
+  ] && {
+    id: it.id, name: it.name, desc: it["desc"], price: Number(it.price)||0,
+    img: it.img, catId: it.cat_id, fresh: !!it.fresh,
+    rating: { avg: Number(it.rating_avg)||0, count: Number(it.rating_count)||0 },
+    available: !!it.available
+  })));
+
+  // join orders
+  const adminOrders = (orders.data||[]).map(o=>{
+    const its = orderItems.filter(oi => oi.order_id === o.id).map(oi => ({
+      id: oi.item_id, name: oi.name, price: Number(oi.price)||0, qty: Number(oi.qty||1)
+    }));
+    const cnt = its.reduce((s,it)=> s + (Number(it.qty)||1), 0);
+    return {
+      id: o.id,
+      total: Number(o.total)||0,
+      itemCount: cnt,
+      time: o.created_at,
+      createdAt: o.created_at,
+      status: o.status || 'new',
+      table: o.table_no||'',
+      orderName: o.order_name||'',
+      notes: o.notes||'',
+      additions: o.additions || [],
+      discount: Number(o.discount)||0,
+      discountPct: Number(o.discount_pct)||0,
+      items: its
+    };
+  });
+  LS.set('orders', adminOrders);
+
+  LS.set('reservations', (reservations.data||[]).map(r => ({
+    id: Number(r.id),
+    name: r.name,
+    phone: r.phone,
+    date: r.date,
+    people: r.people,
+    kind: r.kind,
+    table: r.table_no || '',
+    duration: r.duration_minutes || 90,
+    notes: r.notes || '',
+    status: r.status || 'new'
+  })));
+
+  // notifications: only orders for the admin drawer
+  const notifOrders = adminOrders.map(o => ({
+    id: `ord-${o.id}`,
+    type: 'order',
+    title: `طلب جديد #${o.id}`,
+    message: `عدد العناصر: ${o.itemCount} | الإجمالي: ${o.total}`,
+    time: o.createdAt,
+    read: false
+  }));
+  const existing = LS.get('notifications', []).filter(n => n.type !== 'order');
+  const merged = [...existing, ...notifOrders].sort((a,b)=> new Date(b.time) - new Date(a.time));
+  LS.set('notifications', merged);
+
+  try {
+    document.dispatchEvent(new CustomEvent('sb:admin-synced', { detail: { at: Date.now() } }));
+  } catch {}
+
+  return true;
 }
 
-// Require admin; otherwise redirect to login with a flag
 export async function requireAdminOrRedirect(loginPath='login.html'){
   const sb = window.supabase;
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { location.replace(loginPath); return null; }
-
-  const uid = session.user.id;
-  const { data, error } = await sb.from('admins').select('user_id').eq('user_id', uid).maybeSingle();
-  if (error || !data) { location.replace(`${loginPath}?not_admin=1`); return null; }
-
-  return session; // OK: admin
+  return session; // أي مستخدم مسجّل دخولًا مسموح
 }
 
 // ---------- Auto bootstrap on admin pages (safe & optional) ----------
@@ -366,10 +462,7 @@ export async function requireAdminOrRedirect(loginPath='login.html'){
     if (!isAdminPage) return;
 
     const run = async () => {
-      try {
-        const s = await requireAdminOrRedirect('login.html');
-        if (!s) return; // ليس أدمن -> تم تحويله للّوجن
-      } catch(e){ console.error(e); return; }
+      try { await requireAdminOrRedirect('login.html'); } catch(e){ console.error(e); }
       try { await syncAdminDataToLocal(); } catch(e){ console.error(e); }
     };
 
@@ -392,12 +485,11 @@ window.supabaseBridge = {
   deleteCategorySB,
   createMenuItemSB,
   updateMenuItemSB,
-  deleteMenuItemSB,
+  deleteMenuItemSB,   // <— أُضيفت هنا
   createReservationSB,
   updateReservationSB,
   deleteReservationSB,
   createRatingSB,
   syncAdminDataToLocal,
-  requireAdminOrRedirect,
-  isAdminSB
+  requireAdminOrRedirect
 };
